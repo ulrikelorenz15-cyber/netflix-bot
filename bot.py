@@ -84,6 +84,10 @@ def detect_series(title):
         return "🔫 John Wick"
 
     return ""
+    
+def build_hashtags(genre):
+    tags = genre.split(",")
+    return " ".join([f"#{g.strip().replace(' ', '')}" for g in tags])
 
 # ================================
 # NETFLIX BANNER
