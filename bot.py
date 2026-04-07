@@ -45,11 +45,19 @@ def send_message(chat_id, text):
 
 def get_movie_data(title):
     try:
-        url = f"http://www.omdbapi.com/?t={title}&apikey={OMDB_KEY}"
-        res = requests.get(url).json()
-        if res.get("Response") == "False":
+        url = f"http://www.omdbapi.com/?t={title}&apikey={OMDB_KEY}&plot=full"
+        data = requests.get(url).json()
+
+        if data.get("Response") == "False":
             return None
-        return res
+
+        # 🔥 einfache Übersetzung (Fake KI Style)
+        plot = data.get("Plot", "")
+        plot_de = plot.replace("the", "der").replace("a ", "ein ").replace("is", "ist")
+
+        data["Plot_DE"] = plot_de
+
+        return data
     except:
         return None
 
