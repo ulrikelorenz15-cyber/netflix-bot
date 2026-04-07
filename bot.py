@@ -1,5 +1,5 @@
 # ================================
-# 🎬 TELEGRAM BOT (ULTIMATE VERSION)
+# 🎬 TELEGRAM BOT (ULTIMATE FIXED)
 # ================================
 
 import os
@@ -11,7 +11,9 @@ from PIL import Image, ImageDraw, ImageFont
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
-OMDB_KEY = "a3776f86"  # 🔥 HIER EINTRAGEN
+CHANNEL = "-1003526259129"  # 🔥 DEIN KANAL
+
+OMDB_KEY = "a3776f86"
 
 DATA_FILE = "data.json"
 
@@ -40,7 +42,7 @@ def send_message(chat_id, text):
     })
 
 # ================================
-# OMDb DATEN
+# OMDb DATEN + DEUTSCH
 # ================================
 
 def get_movie_data(title):
@@ -51,9 +53,11 @@ def get_movie_data(title):
         if data.get("Response") == "False":
             return None
 
-        # 🔥 einfache Übersetzung (Fake KI Style)
         plot = data.get("Plot", "")
-        plot_de = plot.replace("the", "der").replace("a ", "ein ").replace("is", "ist")
+
+        # 🔥 bessere einfache Übersetzung
+        plot_de = plot.replace("the", "der").replace("The", "Der")
+        plot_de = plot_de.replace("a ", "ein ").replace("is", "ist")
 
         data["Plot_DE"] = plot_de
 
@@ -84,7 +88,11 @@ def detect_series(title):
         return "🔫 John Wick"
 
     return ""
-    
+
+# ================================
+# HASHTAGS
+# ================================
+
 def build_hashtags(genre):
     tags = genre.split(",")
     return " ".join([f"#{g.strip().replace(' ', '')}" for g in tags])
@@ -144,7 +152,7 @@ def handle_video(chat_id, message):
         rating = movie.get("imdbRating", "7.0")
         runtime = movie.get("Runtime", "120 min")
         director = movie.get("Director", "-")
-        plot = movie.get("Plot", "Keine Beschreibung verfügbar.")
+        plot = movie.get("Plot_DE", movie.get("Plot"))
     else:
         year = "2025"
         genre = "Action"
@@ -154,13 +162,14 @@ def handle_video(chat_id, message):
         plot = "Keine Beschreibung verfügbar."
 
     series = detect_series(title)
+    hashtags = build_hashtags(genre)
 
     new_id = len(data["movies"]) + 1
 
     caption = f"""🎬 {title.upper()} ({year})
 🔥 4K • {genre}
 ━━━━━━━━━━━━━━
-⭐ {rating} • ⏱ {runtime}
+⭐ {rating} • ⏱ {runtime} • 🔞 FSK 16
 🎥 {director}
 ━━━━━━━━━━━━━━
 📖 STORY
@@ -168,6 +177,7 @@ def handle_video(chat_id, message):
 ━━━━━━━━━━━━━━
 ▶️ #{str(new_id).zfill(4)}
 ━━━━━━━━━━━━━━
+{hashtags}
 {series}
 @LibraryOfLegends"""
 
@@ -182,14 +192,14 @@ def handle_video(chat_id, message):
 
     save_data(data)
 
-    # Banner senden
+    # 📸 Banner in Kanal
     banner = create_banner(title)
     with open(banner, "rb") as img:
-        requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": chat_id})
+        requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": CHANNEL})
 
-    # Video senden
+    # 🎬 Video in Kanal
     requests.post(f"{URL}/sendVideo", json={
-        "chat_id": chat_id,
+        "chat_id": CHANNEL,
         "video": file_id,
         "caption": caption
     })
