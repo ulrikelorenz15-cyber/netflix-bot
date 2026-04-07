@@ -43,6 +43,26 @@ def handle_video(chat_id, message):
 
     new_id = len(data["movies"]) + 1
 
+    # einfache Fake Daten (später verbessern)
+    year = "2025"
+    genre = "Action • Thriller"
+    rating = round(6.5 + new_id * 0.1, 1)
+    runtime = 100 + new_id
+    fsk = "16"
+
+    caption = f"""🎬 {title.upper()} ({year})
+🔥 4K • {genre}
+━━━━━━━━━━━━━━
+⭐ {rating} • ⏱ {runtime} Min • 🔞 FSK {fsk}
+━━━━━━━━━━━━━━
+📖 STORY
+Ein spannender Film voller Action und Wendungen.
+━━━━━━━━━━━━━━
+▶️ #{str(new_id).zfill(4)}
+━━━━━━━━━━━━━━
+#Action #Thriller #Neu
+@LibraryOfLegends"""
+
     data["movies"].append({
         "id": new_id,
         "title": title,
@@ -51,7 +71,12 @@ def handle_video(chat_id, message):
 
     save_data(data)
 
-    send_message(chat_id, f"✅ Gespeichert: {title}")
+    # VIDEO POSTEN
+    requests.post(f"{URL}/sendVideo", json={
+        "chat_id": chat_id,
+        "video": file_id,
+        "caption": caption
+    })
 
 # ---------------- SEARCH ----------------
 def handle_text(chat_id, text):
