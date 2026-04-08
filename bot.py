@@ -257,10 +257,22 @@ def handle_video(msg):
 def show_home(chat_id):
     data = load_data()
 
-    requests.post(f"{URL}/sendMessage", json={
-        "chat_id": chat_id,
-        "text": "🎬 Library of Legends"
-    })
+    collections = build_collections(data)
+
+    send_message(chat_id, "🎬 Library of Legends\n\n🔥 Entdecke Filme wie auf Netflix")
+
+    # 🔥 TRENDING ROW
+    send_message(chat_id, "🔥 Trending")
+    show_grid(chat_id, collections["🔥 Trending"], 0)
+
+    # 🆕 NEW ROW
+    send_message(chat_id, "🆕 Neu hinzugefügt")
+    show_grid(chat_id, collections["🆕 Neu"], 0)
+
+    # ⭐ TOP IMDb ROW
+    top = [m for m in data["movies"] if float(get_movie(m["title"])["imdbRating"]) >= 7.5]
+    send_message(chat_id, "⭐ Top IMDb")
+    show_grid(chat_id, top, 0)
 
 # ================================
 # WEBHOOK
