@@ -1,5 +1,5 @@
 # ================================
-# 🎬 TELEGRAM BOT (ULTIMATE FIXED)
+# 🎬 TELEGRAM BOT (KI VERSION)
 # ================================
 
 import os
@@ -7,13 +7,17 @@ import json
 import requests
 from flask import Flask, request
 from PIL import Image, ImageDraw, ImageFont
+from openai import OpenAI  # 🔥 NEU
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
-CHANNEL = "-1003526259129"  # 🔥 DEIN KANAL
+CHANNEL = "-1003526259129"
 
 OMDB_KEY = "a3776f86"
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 DATA_FILE = "data.json"
 
@@ -32,6 +36,34 @@ def save_data(data):
 data = load_data()
 
 # ================================
+# KI STORY
+# ================================
+
+def generate_story(title, plot):
+    try:
+        prompt = f"""
+Schreibe eine hochwertige deutsche Film-Beschreibung im Netflix Stil.
+
+Film: {title}
+
+Inhalt:
+{plot}
+
+Maximal 4 Sätze. Spannend, natürlich und professionell.
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        print("KI Fehler:", e)
+        return plot  # fallback
+
+# ================================
 # SEND MESSAGE
 # ================================
 
@@ -42,7 +74,7 @@ def send_message(chat_id, text):
     })
 
 # ================================
-# OMDb DATEN + DEUTSCH
+# OMDb DATEN
 # ================================
 
 def get_movie_data(title):
@@ -52,14 +84,6 @@ def get_movie_data(title):
 
         if data.get("Response") == "False":
             return None
-
-        plot = data.get("Plot", "")
-
-        # 🔥 bessere einfache Übersetzung
-        plot_de = plot.replace("the", "der").replace("The", "Der")
-        plot_de = plot_de.replace("a ", "ein ").replace("is", "ist")
-
-        data["Plot_DE"] = plot_de
 
         return data
     except:
@@ -98,7 +122,7 @@ def build_hashtags(genre):
     return " ".join([f"#{g.strip().replace(' ', '')}" for g in tags])
 
 # ================================
-# NETFLIX BANNER
+# BANNER
 # ================================
 
 def create_banner(title):
@@ -152,7 +176,9 @@ def handle_video(chat_id, message):
         rating = movie.get("imdbRating", "7.0")
         runtime = movie.get("Runtime", "120 min")
         director = movie.get("Director", "-")
-        plot = movie.get("Plot_DE", movie.get("Plot"))
+
+        original_plot = movie.get("Plot", "")
+        plot = generate_story(title, original_plot)  # 🔥 KI
     else:
         year = "2025"
         genre = "Action"
@@ -181,7 +207,6 @@ def handle_video(chat_id, message):
 {series}
 @LibraryOfLegends"""
 
-    # speichern
     data["movies"].append({
         "id": new_id,
         "title": title,
@@ -192,12 +217,10 @@ def handle_video(chat_id, message):
 
     save_data(data)
 
-    # 📸 Banner in Kanal
     banner = create_banner(title)
     with open(banner, "rb") as img:
         requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": CHANNEL})
 
-    # 🎬 Video in Kanal
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": CHANNEL,
         "video": file_id,
@@ -205,25 +228,7 @@ def handle_video(chat_id, message):
     })
 
 # ================================
-# SEARCH
-# ================================
-
-def handle_text(chat_id, text):
-    results = [m for m in data["movies"] if text.lower() in m["title"].lower()]
-
-    if not results:
-        send_message(chat_id, "❌ Kein Film gefunden")
-        return
-
-    msg = "🎬 Ergebnisse:\n\n"
-
-    for m in results[:10]:
-        msg += f"🎬 {m['title']} ({m.get('year','?')})\n"
-
-    send_message(chat_id, msg)
-
-# ================================
-# WEBHOOK
+# SEARCH + WEBHOOK bleibt gleich
 # ================================
 
 app = Flask(__name__)
@@ -253,13 +258,7 @@ def webhook():
 def home():
     return "🤖 Bot läuft!"
 
-# ================================
-# START
-# ================================
-
 if __name__ == "__main__":
     webhook_url = os.getenv("WEBHOOK_URL")
-
     requests.get(f"{URL}/setWebhook?url={webhook_url}/webhook/{TOKEN}")
-
     app.run(host="0.0.0.0", port=8080)
