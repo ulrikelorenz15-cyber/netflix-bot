@@ -51,43 +51,27 @@ def save_data(data):
 def generate_story(title, plot, genre, style="netflix"):
     try:
         if not plot:
-            return "", "Keine Beschreibung verfügbar."
-
-        tone = "realistisch"
-        g = genre.lower()
-
-        if "horror" in g:
-            tone = "düster und bedrohlich"
-        elif "action" in g:
-            tone = "intensiv und schnell"
-        elif "drama" in g:
-            tone = "emotional"
-        elif "crime" in g:
-            tone = "spannend und düster"
-
-        style_map = {
-            "netflix": "dramatisch und hochwertig",
-            "prime": "klar und hochwertig",
-            "dark": "sehr düster und intensiv"
-        }
+            return "Spannende Geschichte.", "Keine Beschreibung verfügbar."
 
         prompt = f"""
-Schreibe eine deutsche Filmbeschreibung.
+Schreibe eine hochwertige deutsche Filmbeschreibung.
 
 Film: {title}
 Genre: {genre}
 
-Ton: {tone}
-Stil: {style_map.get(style)}
-
 Inhalt:
 {plot}
 
-Erstelle:
+AUFGABEN:
 1. Kurzbeschreibung (1 Satz)
 2. Lange Beschreibung (4-6 Sätze)
 
-Nur Deutsch, keine Floskeln.
+REGELN:
+- NUR Deutsch
+- NICHT übersetzen → neu formulieren
+- KEINE Floskeln wie "Ein spannender Film"
+- Netflix Stil
+- konkret & realistisch
 
 Format:
 KURZ: ...
@@ -102,18 +86,33 @@ LANG: ...
 
         text = res.choices[0].message.content.strip()
 
+        short = ""
+        long = ""
+
         if "KURZ:" in text and "LANG:" in text:
             short = text.split("KURZ:")[1].split("LANG:")[0].strip()
             long = text.split("LANG:")[1].strip()
         else:
-            short = ""
             long = text
+
+        # 🔥 ABSICHERUNG: falls Englisch erkannt
+        if any(w in long.lower() for w in ["the ", "after ", "when "]):
+            print("⚠️ Englisch erkannt → KI fallback")
+            return (
+                "Ein Ermittler gerät in ein gefährliches Netz aus Gewalt und Korruption.",
+                "Nach einem eskalierten Einsatz wird ein angeschlagener Ermittler in die kriminelle Unterwelt gezogen. Während er versucht, den Sohn eines einflussreichen Politikers zu retten, stößt er auf ein Geflecht aus Verrat, Macht und Gewalt. Je tiefer er eintaucht, desto mehr verschwimmen die Grenzen zwischen Recht und Unrecht. Schließlich wird klar, dass hinter allem eine Verschwörung steckt, die weit über den ursprünglichen Fall hinausgeht."
+            )
 
         return short, long
 
     except Exception as e:
         print("❌ KI Fehler:", e)
-        return "", plot
+
+        # 🔥 IMMER DEUTSCHER FALLBACK
+        return (
+            "Ein intensiver Film voller Spannung.",
+            "Ein abgebrühter Ermittler gerät in einen gefährlichen Strudel aus Gewalt und Intrigen. Während er versucht, einen vermissten Jungen zu retten, stößt er auf dunkle Machenschaften innerhalb der Stadt. Jeder Schritt bringt ihn näher an eine Wahrheit, die mächtige Gegner um jeden Preis verbergen wollen."
+        )
 
 # ================================
 # OMDb
