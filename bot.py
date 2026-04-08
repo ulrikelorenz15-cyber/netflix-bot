@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT MASTER FINAL (FIXED)
+# 🎬 NETFLIX BOT FINAL (UI + AI + RECOMMENDER)
 # ================================
 
 import os
@@ -13,10 +13,7 @@ URL = f"https://api.telegram.org/bot{TOKEN}"
 CHANNEL = "-1003526259129"
 OMDB_KEY = "a3776f86"
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-print("OPENAI:", "OK" if OPENAI_API_KEY else "FEHLT ❌")
-
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DATA_FILE = "data.json"
 SESSION = {}
@@ -54,13 +51,11 @@ def get_movie(title):
         return None
 
 # ================================
-# 🧠 KI STORY (FIXED + DEBUG)
+# KI STORY
 # ================================
 
-def generate_story(title, plot, genre, user_id=None, series=None):
+def generate_story(title, plot, genre):
     try:
-        print("🧠 KI START:", title)
-
         if not plot or plot == "N/A":
             plot = f"{title} ist ein Film aus dem Genre {genre}."
 
@@ -69,7 +64,7 @@ def generate_story(title, plot, genre, user_id=None, series=None):
             messages=[{
                 "role": "user",
                 "content": f"""
-Schreibe eine hochwertige deutsche Filmbeschreibung.
+Schreibe eine deutsche Filmbeschreibung.
 
 Film: {title}
 Genre: {genre}
@@ -79,9 +74,8 @@ Inhalt:
 
 REGELN:
 - 4 bis 5 Sätze
-- konkret & realistisch
+- konkret, realistisch
 - KEINE Floskeln
-- Netflix Stil
 """
             }],
             temperature=1.0
@@ -89,135 +83,184 @@ REGELN:
 
         text = res.choices[0].message.content.strip()
 
-        print("✅ KI TEXT:", text)
-
-        if len(text) < 120:
-            raise Exception("zu kurz")
-
-        if any(w in text.lower() for w in ["the ", "after ", "when "]):
-            raise Exception("englisch erkannt")
+        if len(text) < 100:
+            raise Exception()
 
         return text
 
-    except Exception as e:
-        print("❌ KI ERROR:", e)
-
-        return (
-            f"{title} beginnt mit einer Situation, die schnell außer Kontrolle gerät. "
-            f"Die Hauptfigur wird in ein gefährliches Umfeld gezogen, in dem jede Entscheidung Konsequenzen hat. "
-            f"Während sich die Lage zuspitzt, treten immer größere Konflikte zutage. "
-            f"Am Ende steht weit mehr auf dem Spiel als nur ein einzelnes Schicksal."
-        )
-
-# ================================
-# KI REIHEN SYSTEM
-# ================================
-
-def detect_series_ai_full(title):
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role": "user","content": f"Film: {title}\nSERIE:\nORDER:\nPHASE:\nTIMELINE:"}],
-            temperature=0.2
-        )
-
-        text = res.choices[0].message.content
-
-        def get(key):
-            if key in text:
-                return text.split(key)[1].split("\n")[0].replace(":", "").strip()
-            return None
-
-        return {
-            "series": get("SERIE"),
-            "order": int(get("ORDER") or 0),
-            "phase": get("PHASE"),
-            "timeline": int(get("TIMELINE") or 0)
-        }
-
     except:
-        return {"series": None, "order": 0, "phase": None, "timeline": 0}
+        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte und Entscheidungen, bei der jede Handlung neue Konsequenzen nach sich zieht."
 
 # ================================
-# RATING
+# COLLECTIONS
 # ================================
 
-def avg_rating(m):
-    if not m.get("ratings"):
-        return 0
-    return round(sum(m["ratings"]) / len(m["ratings"]), 1)
+def build_collections(data):
+    return {
+        "🔥 Trending": sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True),
+        "🆕 Neu": list(reversed(data["movies"]))
+    }
 
 # ================================
-# FILM CARD (FINAL PRO MAX)
+# ⭐ EMPFEHLUNGSSYSTEM
+# ================================
+
+def get_recommendations(data, base_movie):
+    base = get_movie(base_movie["title"])
+    if not base:
+        return []
+
+    base_genre = base.get("Genre", "").lower()
+
+    scored = []
+
+    for m in data["movies"]:
+        if m["title"] == base_movie["title"]:
+            continue
+
+        movie = get_movie(m["title"])
+        if not movie:
+            continue
+
+        score = 0
+
+        if any(g.strip().lower() in base_genre for g in movie.get("Genre", "").split(",")):
+            score += 2
+
+        try:
+            score += float(movie.get("imdbRating", 0)) / 5
+        except:
+            pass
+
+        score += m.get("views", 0) * 0.2
+
+        scored.append((score, m))
+
+    scored.sort(reverse=True, key=lambda x: x[0])
+
+    return [m for _, m in scored[:5]]
+
+# ================================
+# GRID (NETFLIX STYLE)
+# ================================
+
+def show_grid(chat_id, movies, page=0):
+    SESSION[chat_id] = movies
+
+    per_page = 3
+    start = page * per_page
+    end = start + per_page
+
+    subset = movies[start:end]
+
+    for m in subset:
+        movie = get_movie(m["title"])
+        if not movie:
+            continue
+
+        requests.post(f"{URL}/sendPhoto", json={
+            "chat_id": chat_id,
+            "photo": movie["Poster"] if movie["Poster"] != "N/A" else "https://via.placeholder.com/300x450",
+            "caption": f"🎬 {movie['Title']} • ⭐ {movie['imdbRating']}",
+            "reply_markup": {
+                "inline_keyboard": [[
+                    {"text": "▶️ Öffnen", "callback_data": f"movie_{movie['Title']}"}
+                ]]
+            }
+        })
+
+    nav = []
+
+    if page > 0:
+        nav.append({"text": "⬅️", "callback_data": f"grid_{page-1}"})
+
+    if end < len(movies):
+        nav.append({"text": "➡️", "callback_data": f"grid_{page+1}"})
+
+    if nav:
+        requests.post(f"{URL}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": "Navigation",
+            "reply_markup": {"inline_keyboard": [nav]}
+        })
+
+# ================================
+# 🎬 FILM CARD
 # ================================
 
 def send_card(chat_id, movie, local):
-    title = movie.get("Title", "Unknown")
-    year = movie.get("Year", "2025")
-    genre = movie.get("Genre", "Action")
+    title = movie.get("Title")
+    genre = movie.get("Genre", "")
     genre_clean = " • ".join([g.strip() for g in genre.split(",")])
 
-    imdb = movie.get("imdbRating", "7.0")
-    runtime = movie.get("Runtime", "120 Min")
-    director = movie.get("Director", "-")
+    plot = generate_story(title, movie.get("Plot"), genre)
 
-    actors = movie.get("Actors", "")
-    actors = ", ".join(actors.split(", ")[:3]) if actors else "-"
-
-    # 🔥 FIX: richtiger Aufruf
-    plot = generate_story(
-        title,
-        movie.get("Plot"),
-        genre,
-        chat_id,
-        local.get("series")
-    )
-
-    user_rating = avg_rating(local)
-
-    series_text = ""
-    if local.get("series"):
-        series_text += f"\n📀 {local['series']}"
-    if local.get("order"):
-        series_text += f" • Teil {local['order']}"
-
-    badge = ""
-    if local.get("views", 0) >= 5:
-        badge = "🔥 Trending\n"
-
-    movie_id = local.get("id", "0000")
-
-    tags = " ".join([f"#{g.strip().replace(' ', '')}" for g in genre.split(",")])
-    tags += " #Neu"
-
-    caption = f"""🎬 {title.upper()} ({year})
-{badge}🔥 4K • {genre_clean}
+    caption = f"""🎬 {title.upper()} ({movie.get("Year")})
+🔥 4K • {genre_clean}
 ━━━━━━━━━━━━━━
-⭐ {imdb} • 👤 {user_rating} • ⏱ {runtime} • 🔞 FSK 16
-🎥 {director}
-🎭 {actors}
-{series_text}
+⭐ {movie.get("imdbRating")} • ⏱ {movie.get("Runtime")}
+🎥 {movie.get("Director")}
 ━━━━━━━━━━━━━━
 📖 STORY
 {plot}
 ━━━━━━━━━━━━━━
-▶️ #{movie_id}
-━━━━━━━━━━━━━━
-{tags}
-@LibraryOfLegends"""
+▶️ #{local.get("id")}"""
 
-    # Poster
     requests.post(f"{URL}/sendPhoto", json={
         "chat_id": chat_id,
-        "photo": movie["Poster"] if movie.get("Poster") != "N/A" else "https://via.placeholder.com/300x450"
+        "photo": movie["Poster"]
     })
 
-    # Video
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
         "video": local["file_id"],
         "caption": caption
     })
+
+    # ⭐ Empfehlungen
+    data = load_data()
+    recs = get_recommendations(data, local)
+
+    if recs:
+        requests.post(f"{URL}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": "🎯 Das könnte dir auch gefallen:"
+        })
+
+        for r in recs[:3]:
+            movie_r = get_movie(r["title"])
+            if not movie_r:
+                continue
+
+            requests.post(f"{URL}/sendPhoto", json={
+                "chat_id": chat_id,
+                "photo": movie_r["Poster"],
+                "caption": movie_r["Title"],
+                "reply_markup": {
+                    "inline_keyboard": [[
+                        {"text": "▶️ Öffnen", "callback_data": f"movie_{movie_r['Title']}"}
+                    ]]
+                }
+            })
+
+# ================================
+# HOME (NETFLIX UI)
+# ================================
+
+def show_home(chat_id):
+    data = load_data()
+    collections = build_collections(data)
+
+    requests.post(f"{URL}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": "🎬 Library of Legends\n\n🔥 Entdecke Filme wie auf Netflix"
+    })
+
+    requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": "🔥 Trending"})
+    show_grid(chat_id, collections["🔥 Trending"], 0)
+
+    requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": "🆕 Neu"})
+    show_grid(chat_id, collections["🆕 Neu"], 0)
 
 # ================================
 # VIDEO UPLOAD
@@ -233,15 +276,11 @@ def handle_video(msg):
     if not movie:
         return
 
-    meta = detect_series_ai_full(movie["Title"])
-
     entry = {
         "id": get_next_id(data),
         "title": movie["Title"],
         "file_id": video["file_id"],
-        "views": 0,
-        "ratings": [],
-        **meta
+        "views": 0
     }
 
     data["movies"].append(entry)
@@ -249,30 +288,6 @@ def handle_video(msg):
 
     send_card(msg["chat"]["id"], movie, entry)
     send_card(CHANNEL, movie, entry)
-
-# ================================
-# HOME
-# ================================
-
-def show_home(chat_id):
-    data = load_data()
-
-    collections = build_collections(data)
-
-    send_message(chat_id, "🎬 Library of Legends\n\n🔥 Entdecke Filme wie auf Netflix")
-
-    # 🔥 TRENDING ROW
-    send_message(chat_id, "🔥 Trending")
-    show_grid(chat_id, collections["🔥 Trending"], 0)
-
-    # 🆕 NEW ROW
-    send_message(chat_id, "🆕 Neu hinzugefügt")
-    show_grid(chat_id, collections["🆕 Neu"], 0)
-
-    # ⭐ TOP IMDb ROW
-    top = [m for m in data["movies"] if float(get_movie(m["title"])["imdbRating"]) >= 7.5]
-    send_message(chat_id, "⭐ Top IMDb")
-    show_grid(chat_id, top, 0)
 
 # ================================
 # WEBHOOK
@@ -290,12 +305,16 @@ def webhook():
         cb = update["callback_query"]["data"]
 
         if cb.startswith("movie_"):
-            title = cb.replace("movie_","")
+            title = cb.replace("movie_", "")
             m = next(x for x in data["movies"] if x["title"] == title)
             movie = get_movie(title)
             m["views"] += 1
             save_data(data)
             send_card(chat_id, movie, m)
+
+        elif cb.startswith("grid_"):
+            page = int(cb.split("_")[1])
+            show_grid(chat_id, SESSION.get(chat_id, []), page)
 
     msg = update.get("message")
 
