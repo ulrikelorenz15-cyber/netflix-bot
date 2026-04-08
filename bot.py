@@ -1,5 +1,5 @@
 # ================================
-# 🎬 TELEGRAM BOT (KI VERSION)
+# 🎬 TELEGRAM BOT (KI FINAL STABLE)
 # ================================
 
 import os
@@ -7,7 +7,7 @@ import json
 import requests
 from flask import Flask, request
 from PIL import Image, ImageDraw, ImageFont
-from openai import OpenAI  # 🔥 NEU
+from openai import OpenAI
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
@@ -18,6 +18,9 @@ OMDB_KEY = "a3776f86"
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 print("OPENAI KEY:", "OK" if OPENAI_API_KEY else "FEHLT ❌")
+
+# 🔥 FIX: CLIENT DEFINIERT
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 DATA_FILE = "data.json"
 
@@ -42,11 +45,17 @@ data = load_data()
 def generate_story(title, plot):
     try:
         if not OPENAI_API_KEY:
-            print("❌ Kein OpenAI Key gesetzt")
-            return "Ein spannender Film voller Wendungen und intensiver Momente."
+            print("❌ Kein OpenAI Key")
+            return "Ein intensiver Film voller Spannung und unerwarteter Wendungen."
 
-        prompt = f"""
-Schreibe eine kurze deutsche Film-Beschreibung im Netflix Stil.
+        print("🎬 Sende an KI:", title)
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{
+                "role": "user",
+                "content": f"""
+Schreibe eine hochwertige deutsche Film-Beschreibung im Netflix Stil.
 
 Film: {title}
 
@@ -55,10 +64,7 @@ Inhalt:
 
 Maximal 3-4 Sätze. Natürliches Deutsch.
 """
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
+            }]
         )
 
         text = response.choices[0].message.content.strip()
@@ -69,7 +75,7 @@ Maximal 3-4 Sätze. Natürliches Deutsch.
 
     except Exception as e:
         print("❌ KI ERROR:", e)
-        return plot
+        return "Ein spannender Film mit intensiven Momenten und überraschenden Wendungen."
 
 # ================================
 # SEND MESSAGE
@@ -82,7 +88,7 @@ def send_message(chat_id, text):
     })
 
 # ================================
-# OMDb DATEN
+# OMDb
 # ================================
 
 def get_movie_data(title):
@@ -98,7 +104,7 @@ def get_movie_data(title):
         return None
 
 # ================================
-# FILMREIHEN
+# REIHEN
 # ================================
 
 def detect_series(title):
@@ -134,6 +140,8 @@ def build_hashtags(genre):
 # ================================
 
 def create_banner(title):
+    safe_title = title.replace("/", "").replace("\\", "").replace(":", "")
+
     img = Image.new("RGB", (1280, 720), (10, 10, 10))
     draw = ImageDraw.Draw(img)
 
@@ -142,7 +150,7 @@ def create_banner(title):
     except:
         font = ImageFont.load_default()
 
-    text = title.upper()
+    text = safe_title.upper()
 
     bbox = draw.textbbox((0, 0), text, font=font)
     w = bbox[2] - bbox[0]
@@ -153,7 +161,7 @@ def create_banner(title):
 
     draw.text((x, y), text, fill="white", font=font)
 
-    path = f"/tmp/{title}.jpg"
+    path = f"/tmp/{safe_title}.jpg"
     img.save(path)
 
     return path
@@ -164,6 +172,24 @@ def create_banner(title):
 
 def handle_start(chat_id):
     send_message(chat_id, "🎬 Library of Legends\n\nSchick mir ein Video!")
+
+# ================================
+# SEARCH (🔥 FIX FEHLTE!)
+# ================================
+
+def handle_text(chat_id, text):
+    results = [m for m in data["movies"] if text.lower() in m["title"].lower()]
+
+    if not results:
+        send_message(chat_id, "❌ Kein Film gefunden")
+        return
+
+    msg = "🎬 Ergebnisse:\n\n"
+
+    for m in results[:10]:
+        msg += f"🎬 {m['title']} ({m.get('year','?')})\n"
+
+    send_message(chat_id, msg)
 
 # ================================
 # VIDEO
@@ -186,14 +212,14 @@ def handle_video(chat_id, message):
         director = movie.get("Director", "-")
 
         original_plot = movie.get("Plot", "")
-        plot = generate_story(title, original_plot)  # 🔥 KI
+        plot = generate_story(title, original_plot)
     else:
         year = "2025"
         genre = "Action"
         rating = "7.0"
         runtime = "120 min"
         director = "-"
-        plot = "Keine Beschreibung verfügbar."
+        plot = "Ein spannender Film voller Action und unerwarteter Wendungen."
 
     series = detect_series(title)
     hashtags = build_hashtags(genre)
@@ -236,7 +262,7 @@ def handle_video(chat_id, message):
     })
 
 # ================================
-# SEARCH + WEBHOOK bleibt gleich
+# WEBHOOK
 # ================================
 
 app = Flask(__name__)
@@ -265,6 +291,10 @@ def webhook():
 @app.route("/")
 def home():
     return "🤖 Bot läuft!"
+
+# ================================
+# START
+# ================================
 
 if __name__ == "__main__":
     webhook_url = os.getenv("WEBHOOK_URL")
