@@ -1,13 +1,11 @@
-
 # ================================
-# 🎬 NETFLIX BOT FINAL BOSS MODE (REAL FINAL)
+# 🎬 NETFLIX BOT FINAL BOSS MODE (STABLE GOD VERSION)
 # ================================
 
 import os
 import json
 import requests
 from flask import Flask, request
-from PIL import Image, ImageDraw, ImageFont
 from openai import OpenAI
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -18,23 +16,19 @@ OMDB_KEY = "a3776f86"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DATA_FILE = "data.json"
-SESSION = {}  # 🔥 merkt sich aktuelle Grid Liste pro User
+SESSION = {}
 
 # ================================
 # DATA
 # ================================
 
 def load_data():
-    default = {"movies": []}
     if os.path.exists(DATA_FILE):
         try:
-            data = json.load(open(DATA_FILE))
-            if "movies" not in data:
-                data["movies"] = []
-            return data
+            return json.load(open(DATA_FILE))
         except:
-            return default
-    return default
+            pass
+    return {"movies": []}
 
 def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
@@ -60,55 +54,37 @@ def get_movie(title):
         return None
 
 # ================================
-# KI STORY (REALISTISCH)
+# KI STORY
 # ================================
 
 def generate_story(title, plot, genre):
     try:
-        if not plot or plot == "N/A":
-            return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte, Druck und Konsequenzen."
-
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[{
                 "role": "user",
-                "content": f"""
-Schreibe eine deutsche Netflix Filmbeschreibung.
-
-Film: {title}
-Genre: {genre}
-
-Inhalt:
-{plot}
-
-REGELN:
-- 2–3 Sätze
-- konkret & realistisch
-- keine Floskeln
-"""
+                "content": f"Schreibe eine kurze deutsche Netflix Filmbeschreibung (2-3 Sätze, konkret): {plot}"
             }]
         )
-
         text = res.choices[0].message.content.strip()
-
-        if len(text) < 50:
+        if len(text) < 40:
             raise Exception()
-
         return text
-
     except:
-        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte, Druck und Konsequenzen, bei der jede Entscheidung neue Folgen hat."
+        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte und Konsequenzen."
 
 # ================================
-# AUTO COLLECTIONS
+# 📊 RANKING SYSTEM
 # ================================
 
-def build_collections(data):
-    result = {
-        "🔥 Trending": sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True),
-        "🆕 Neu": list(reversed(data["movies"])),
-        "⭐ Top IMDb": []
-    }
+def calculate_score(movie):
+    rating = movie.get("rating", 0)
+    views = movie.get("views", 0)
+    freshness = int(movie.get("id", 0))
+    return (rating * 2) + (views * 0.5) + (freshness * 0.1)
+
+def get_trending(data):
+    enriched = []
 
     for m in data["movies"]:
         movie = get_movie(m["title"])
@@ -116,15 +92,75 @@ def build_collections(data):
             continue
 
         try:
-            if float(movie["imdbRating"]) >= 7.5:
-                result["⭐ Top IMDb"].append(m)
+            m["rating"] = float(movie.get("imdbRating", "0"))
         except:
-            pass
+            m["rating"] = 0
+
+        m["score"] = calculate_score(m)
+        enriched.append(m)
+
+    return sorted(enriched, key=lambda x: x["score"], reverse=True)
+
+# ================================
+# 🎞 MARVEL TIMELINE
+# ================================
+
+MARVEL = [
+    "Iron Man", "Iron Man 2", "Thor",
+    "Captain America", "Avengers",
+    "Guardians of the Galaxy",
+    "Doctor Strange",
+    "Black Panther",
+    "Avengers: Infinity War",
+    "Avengers: Endgame"
+]
+
+def get_marvel(data):
+    result = []
+    for name in MARVEL:
+        for m in data["movies"]:
+            if name.lower() in m["title"].lower():
+                result.append(m)
+    return result
+
+# ================================
+# 🎞 AUTO COLLECTIONS
+# ================================
+
+def build_collections(data):
+    result = {
+        "🔥 Trending": get_trending(data),
+        "🆕 Neu": list(reversed(data["movies"])),
+        "⭐ Top IMDb": [],
+        "🔥 Action": [],
+        "🚀 Sci-Fi": []
+    }
+
+    for m in data["movies"]:
+        movie = get_movie(m["title"])
+        if not movie:
+            continue
+
+        genre = movie.get("Genre", "").lower()
+
+        try:
+            rating = float(movie.get("imdbRating", "0"))
+        except:
+            rating = 0
+
+        if rating >= 7.5:
+            result["⭐ Top IMDb"].append(m)
+
+        if "action" in genre:
+            result["🔥 Action"].append(m)
+
+        if "sci-fi" in genre:
+            result["🚀 Sci-Fi"].append(m)
 
     return result
 
 # ================================
-# GRID (SWIPE)
+# 🎬 GRID (POSTER SWIPE)
 # ================================
 
 def show_grid(chat_id, movies, page=0):
@@ -134,16 +170,14 @@ def show_grid(chat_id, movies, page=0):
     start = page * per_page
     end = start + per_page
 
-    subset = movies[start:end]
-
-    for m in subset:
+    for m in movies[start:end]:
         movie = get_movie(m["title"])
         if not movie:
             continue
 
         requests.post(f"{URL}/sendPhoto", json={
             "chat_id": chat_id,
-            "photo": movie["Poster"] if movie["Poster"] != "N/A" else "https://via.placeholder.com/300x450",
+            "photo": movie["Poster"],
             "caption": f"🎬 {movie['Title']} • ⭐ {movie['imdbRating']}",
             "reply_markup": {
                 "inline_keyboard": [[
@@ -170,38 +204,17 @@ def show_grid(chat_id, movies, page=0):
     })
 
 # ================================
-# UI
-# ================================
-
-def show_home(chat_id):
-    requests.post(f"{URL}/sendMessage", json={
-        "chat_id": chat_id,
-        "text": "🎬 Library of Legends",
-        "reply_markup": {
-            "inline_keyboard": [
-                [{"text": "🔥 Trending", "callback_data": "row_trending"}],
-                [{"text": "🆕 Neu", "callback_data": "row_new"}],
-                [{"text": "⭐ Top IMDb", "callback_data": "row_top"}]
-            ]
-        }
-    })
-
-# ================================
-# FILM CARD
+# 🎬 FILM CARD
 # ================================
 
 def send_film_card(chat_id, movie, file_id, movie_id):
-    genre = " • ".join(movie["Genre"].split(","))
-    actors = ", ".join(movie["Actors"].split(", ")[:3])
-
     plot = generate_story(movie["Title"], movie.get("Plot", ""), movie["Genre"])
 
     caption = f"""🎬 {movie["Title"].upper()} ({movie["Year"]})
-🔥 4K • {genre}
+🔥 {movie["Genre"]}
 ━━━━━━━━━━━━━━
-⭐ {movie["imdbRating"]} • ⏱ {movie["Runtime"]} • 🔞 FSK 16
+⭐ {movie["imdbRating"]} • ⏱ {movie["Runtime"]}
 🎥 {movie["Director"]}
-🎭 {actors}
 ━━━━━━━━━━━━━━
 📖 STORY
 {plot}
@@ -252,6 +265,25 @@ def handle_video(message):
     send_film_card(CHANNEL, movie, video["file_id"], movie_id)
 
 # ================================
+# UI
+# ================================
+
+def show_home(chat_id):
+    requests.post(f"{URL}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": "🎬 Library of Legends",
+        "reply_markup": {
+            "inline_keyboard": [
+                [{"text": "🔥 Trending", "callback_data": "trending"}],
+                [{"text": "🆕 Neu", "callback_data": "new"}],
+                [{"text": "⭐ Top IMDb", "callback_data": "top"}],
+                [{"text": "🎞 Marvel", "callback_data": "marvel"}],
+                [{"text": "🎞 Collections", "callback_data": "collections"}]
+            ]
+        }
+    })
+
+# ================================
 # WEBHOOK
 # ================================
 
@@ -271,14 +303,20 @@ def webhook():
         if data_cb == "home":
             show_home(chat_id)
 
-        elif data_cb == "row_trending":
+        elif data_cb == "trending":
             show_grid(chat_id, collections["🔥 Trending"])
 
-        elif data_cb == "row_new":
+        elif data_cb == "new":
             show_grid(chat_id, collections["🆕 Neu"])
 
-        elif data_cb == "row_top":
+        elif data_cb == "top":
             show_grid(chat_id, collections["⭐ Top IMDb"])
+
+        elif data_cb == "marvel":
+            show_grid(chat_id, get_marvel(data))
+
+        elif data_cb == "collections":
+            show_grid(chat_id, collections["🔥 Action"])
 
         elif data_cb.startswith("movie_"):
             title = data_cb.replace("movie_", "")
