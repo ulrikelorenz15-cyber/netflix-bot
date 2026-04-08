@@ -10,8 +10,8 @@ from openai import OpenAI
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
-CHANNEL = "-100xxxxxxxxxx"
-OMDB_KEY = "your_omdb_key"
+CHANNEL = "-1003526259129"
+OMDB_KEY = "a3776f86"
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
