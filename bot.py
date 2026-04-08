@@ -17,7 +17,7 @@ CHANNEL = "-1003526259129"
 OMDB_KEY = "a3776f86"
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+print("OPENAI KEY:", "OK" if OPENAI_API_KEY else "FEHLT ❌")
 
 DATA_FILE = "data.json"
 
