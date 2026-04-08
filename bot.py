@@ -1,5 +1,5 @@
 # ================================
-# 🎬 ULTIMATE TELEGRAM NETFLIX BOT
+# 🎬 NETFLIX BOT ULTIMATE FINAL
 # ================================
 
 import os
@@ -8,10 +8,6 @@ import requests
 from flask import Flask, request
 from PIL import Image, ImageDraw, ImageFont
 from openai import OpenAI
-
-# ================================
-# CONFIG
-# ================================
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
@@ -23,7 +19,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 DATA_FILE = "data.json"
 
 # ================================
-# DATA SYSTEM
+# DATA
 # ================================
 
 def load_data():
@@ -49,33 +45,75 @@ def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
 # ================================
-# KI STORY
+# KI STORY SYSTEM
 # ================================
 
-def generate_story(title, plot, genre):
+def generate_story(title, plot, genre, style="netflix"):
     try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{
-                "role": "user",
-                "content": f"""
-Schreibe eine realistische deutsche Netflix Beschreibung.
+        if not plot:
+            return "", "Keine Beschreibung verfügbar."
+
+        tone = "realistisch"
+        g = genre.lower()
+
+        if "horror" in g:
+            tone = "düster und bedrohlich"
+        elif "action" in g:
+            tone = "intensiv und schnell"
+        elif "drama" in g:
+            tone = "emotional"
+        elif "crime" in g:
+            tone = "spannend und düster"
+
+        style_map = {
+            "netflix": "dramatisch und hochwertig",
+            "prime": "klar und hochwertig",
+            "dark": "sehr düster und intensiv"
+        }
+
+        prompt = f"""
+Schreibe eine deutsche Filmbeschreibung.
 
 Film: {title}
 Genre: {genre}
 
+Ton: {tone}
+Stil: {style_map.get(style)}
+
 Inhalt:
 {plot}
 
-4-6 Sätze, direkt, spannend, keine Floskeln.
+Erstelle:
+1. Kurzbeschreibung (1 Satz)
+2. Lange Beschreibung (4-6 Sätze)
+
+Nur Deutsch, keine Floskeln.
+
+Format:
+KURZ: ...
+LANG: ...
 """
-            }],
+
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
             temperature=1.1
         )
 
-        return response.choices[0].message.content.strip()
-    except:
-        return plot
+        text = res.choices[0].message.content.strip()
+
+        if "KURZ:" in text and "LANG:" in text:
+            short = text.split("KURZ:")[1].split("LANG:")[0].strip()
+            long = text.split("LANG:")[1].strip()
+        else:
+            short = ""
+            long = text
+
+        return short, long
+
+    except Exception as e:
+        print("❌ KI Fehler:", e)
+        return "", plot
 
 # ================================
 # OMDb
@@ -91,11 +129,11 @@ def get_movie(title):
         return None
 
 # ================================
-# BANNER (Fallback)
+# BANNER FALLBACK
 # ================================
 
 def create_banner(title):
-    img = Image.new("RGB", (1280, 720), (20, 20, 20))
+    img = Image.new("RGB", (1280, 720), (15, 15, 15))
     draw = ImageDraw.Draw(img)
 
     try:
@@ -104,12 +142,12 @@ def create_banner(title):
         font = ImageFont.load_default()
 
     text = title.upper()
+    bbox = draw.textbbox((0, 0), text, font=font)
 
-    bbox = draw.textbbox((0,0), text, font=font)
-    x = (1280 - (bbox[2]-bbox[0]))//2
-    y = (720 - (bbox[3]-bbox[1]))//2
+    x = (1280 - (bbox[2]-bbox[0])) // 2
+    y = (720 - (bbox[3]-bbox[1])) // 2
 
-    draw.text((x,y), text, fill="white", font=font)
+    draw.text((x, y), text, fill="white", font=font)
 
     path = f"/tmp/{title}.jpg"
     img.save(path)
@@ -139,7 +177,7 @@ def send_buttons(chat_id, text, buttons):
         "reply_markup": {"inline_keyboard": buttons}
     })
 
-def home(chat_id):
+def show_home(chat_id):
     send_buttons(chat_id, "🎬 Library of Legends", [
         [{"text": "🎬 Genres", "callback_data": "genres"}],
         [{"text": "📅 Jahre", "callback_data": "years"}]
@@ -161,6 +199,7 @@ def show_movies(chat_id, movies):
 
 def show_movie(chat_id, title):
     data = load_data()
+
     local = next((m for m in data["movies"] if m["title"] == title), None)
     if not local:
         return
@@ -169,7 +208,7 @@ def show_movie(chat_id, title):
     if not movie:
         return
 
-    plot = generate_story(title, movie["Plot"], movie["Genre"])
+    short, plot = generate_story(title, movie["Plot"], movie["Genre"])
 
     caption = f"""🎬 {title.upper()} ({movie["Year"]})
 🔥 {movie["Genre"]}
@@ -178,15 +217,24 @@ def show_movie(chat_id, title):
 🎥 {movie["Director"]}
 🎭 {", ".join(movie["Actors"].split(", ")[:3])}
 ━━━━━━━━━━━━━━
-📖 {plot}
+🧠 {short}
+
+📖 STORY
+{plot}
 ━━━━━━━━━━━━━━"""
 
     if movie["Poster"] != "N/A":
-        requests.post(f"{URL}/sendPhoto", json={"chat_id": chat_id, "photo": movie["Poster"]})
+        requests.post(f"{URL}/sendPhoto", json={
+            "chat_id": chat_id,
+            "photo": movie["Poster"]
+        })
     else:
         path = create_banner(title)
         with open(path, "rb") as img:
-            requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": chat_id})
+            requests.post(f"{URL}/sendPhoto",
+                files={"photo": img},
+                data={"chat_id": chat_id}
+            )
 
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
@@ -206,6 +254,7 @@ def handle_video(message):
 
     movie = get_movie(title)
     if not movie:
+        print("❌ Film nicht gefunden")
         return
 
     data["movies"].append({
@@ -217,6 +266,16 @@ def handle_video(message):
 
     categorize(data, movie["Title"], movie["Genre"], movie["Year"])
     save_data(data)
+
+    try:
+        requests.post(f"{URL}/sendVideo", json={
+            "chat_id": CHANNEL,
+            "video": video["file_id"],
+            "caption": f"🎬 {movie['Title']}"
+        })
+        print("✅ Film in Kanal gesendet")
+    except Exception as e:
+        print("❌ Kanal Fehler:", e)
 
 # ================================
 # WEBHOOK
@@ -234,7 +293,7 @@ def webhook():
         data = load_data()
 
         if data_cb == "home":
-            home(chat_id)
+            show_home(chat_id)
 
         elif data_cb == "genres":
             show_genres(chat_id, data)
@@ -255,7 +314,7 @@ def webhook():
     chat_id = message["chat"]["id"]
 
     if "text" in message and message["text"] == "/start":
-        home(chat_id)
+        show_home(chat_id)
 
     elif "video" in message or "document" in message:
         handle_video(message)
@@ -263,7 +322,7 @@ def webhook():
     return "ok"
 
 @app.route("/")
-def home_route():
+def home():
     return "Bot läuft 🚀"
 
 # ================================
