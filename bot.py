@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT MASTER FINAL
+# 🎬 NETFLIX BOT MASTER FINAL (FIXED)
 # ================================
 
 import os
@@ -13,7 +13,10 @@ URL = f"https://api.telegram.org/bot{TOKEN}"
 CHANNEL = "-1003526259129"
 OMDB_KEY = "a3776f86"
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+print("OPENAI:", "OK" if OPENAI_API_KEY else "FEHLT ❌")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 DATA_FILE = "data.json"
 SESSION = {}
@@ -51,16 +54,21 @@ def get_movie(title):
         return None
 
 # ================================
-# KI STORY
+# 🧠 KI STORY (FIXED + DEBUG)
 # ================================
 
-def generate_story(title, plot, genre):
+def generate_story(title, plot, genre, user_id=None, series=None):
     try:
-        # 🔥 Fallback wenn kein Plot
-        if not plot or plot == "N/A":
-            return f"{title} erzählt eine intensive Geschichte innerhalb des Genres {genre}, in der Konflikte, Entscheidungen und Konsequenzen im Mittelpunkt stehen."
+        print("🧠 KI START:", title)
 
-        prompt = f"""
+        if not plot or plot == "N/A":
+            plot = f"{title} ist ein Film aus dem Genre {genre}."
+
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{
+                "role": "user",
+                "content": f"""
 Schreibe eine hochwertige deutsche Filmbeschreibung.
 
 Film: {title}
@@ -71,42 +79,34 @@ Inhalt:
 
 REGELN:
 - 4 bis 5 Sätze
-- KEINE Floskeln wie "ein spannender Film"
-- konkret beschreiben, was passiert
-- Namen wie "ein Ermittler", "ein Soldat" etc. benutzen
-- leicht düsterer Netflix Stil
-- realistisch, nicht generisch
-- KEINE Übersetzung → neu formulieren
-
-Nur die Beschreibung.
+- konkret & realistisch
+- KEINE Floskeln
+- Netflix Stil
 """
-
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=1.1
+            }],
+            temperature=1.0
         )
 
         text = res.choices[0].message.content.strip()
 
-        # 🔥 Sicherheitscheck (zu kurz → neu)
+        print("✅ KI TEXT:", text)
+
         if len(text) < 120:
             raise Exception("zu kurz")
 
-        # 🔥 Englisch-Filter
-        if any(w in text.lower() for w in ["the ", "after ", "when ", "must "]):
+        if any(w in text.lower() for w in ["the ", "after ", "when "]):
             raise Exception("englisch erkannt")
 
         return text
 
-    except:
-        # 🔥 STARKER FALLBACK (kein Müll mehr)
+    except Exception as e:
+        print("❌ KI ERROR:", e)
+
         return (
-            f"{title} beginnt mit einer scheinbar kontrollierten Situation, die schnell außer Kontrolle gerät. "
-            f"Ein zentraler Charakter sieht sich gezwungen, sich durch ein immer gefährlicher werdendes Umfeld zu bewegen, "
-            f"in dem Gewalt, Druck und Entscheidungen eng miteinander verknüpft sind. "
-            f"Mit jeder Entwicklung verschärfen sich die Konflikte und ziehen weitere Kreise. "
-            f"Am Ende steht nicht nur ein persönliches Schicksal auf dem Spiel, sondern weit mehr."
+            f"{title} beginnt mit einer Situation, die schnell außer Kontrolle gerät. "
+            f"Die Hauptfigur wird in ein gefährliches Umfeld gezogen, in dem jede Entscheidung Konsequenzen hat. "
+            f"Während sich die Lage zuspitzt, treten immer größere Konflikte zutage. "
+            f"Am Ende steht weit mehr auf dem Spiel als nur ein einzelnes Schicksal."
         )
 
 # ================================
@@ -117,18 +117,7 @@ def detect_series_ai_full(title):
     try:
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[{
-                "role": "user",
-                "content": f"""
-Film: {title}
-
-Gib zurück:
-SERIE:
-ORDER:
-PHASE:
-TIMELINE:
-"""
-            }],
+            messages=[{"role": "user","content": f"Film: {title}\nSERIE:\nORDER:\nPHASE:\nTIMELINE:"}],
             temperature=0.2
         )
 
@@ -150,16 +139,6 @@ TIMELINE:
         return {"series": None, "order": 0, "phase": None, "timeline": 0}
 
 # ================================
-# SORTING
-# ================================
-
-def sort_series(movies):
-    return sorted(movies, key=lambda x: x.get("order", 0))
-
-def sort_timeline(movies):
-    return sorted(movies, key=lambda x: x.get("timeline", 0))
-
-# ================================
 # RATING
 # ================================
 
@@ -169,49 +148,10 @@ def avg_rating(m):
     return round(sum(m["ratings"]) / len(m["ratings"]), 1)
 
 # ================================
-# COLLECTIONS
-# ================================
-
-def build_collections(data):
-    return {
-        "🔥 Trending": sorted(data["movies"], key=lambda x: x["views"], reverse=True),
-        "🆕 Neu": list(reversed(data["movies"]))
-    }
-
-# ================================
-# GRID
-# ================================
-
-def show_grid(chat_id, movies, page=0):
-    SESSION[chat_id] = movies
-
-    per = 3
-    subset = movies[page*per:(page+1)*per]
-
-    for m in subset:
-        movie = get_movie(m["title"])
-        if not movie:
-            continue
-
-        requests.post(f"{URL}/sendPhoto", json={
-            "chat_id": chat_id,
-            "photo": movie["Poster"],
-            "caption": f"{movie['Title']} ⭐ {movie['imdbRating']}",
-            "reply_markup": {
-                "inline_keyboard": [[
-                    {"text": "▶️ Öffnen", "callback_data": f"movie_{movie['Title']}"}
-                ]]
-            }
-        })
-
-# ================================
-# FILM CARD
+# FILM CARD (FINAL PRO MAX)
 # ================================
 
 def send_card(chat_id, movie, local):
-    # -------------------------------
-    # BASIC DATA
-    # -------------------------------
     title = movie.get("Title", "Unknown")
     year = movie.get("Year", "2025")
     genre = movie.get("Genre", "Action")
@@ -221,58 +161,35 @@ def send_card(chat_id, movie, local):
     runtime = movie.get("Runtime", "120 Min")
     director = movie.get("Director", "-")
 
-    # 🎭 Schauspieler
     actors = movie.get("Actors", "")
     actors = ", ".join(actors.split(", ")[:3]) if actors else "-"
 
-    # -------------------------------
-    # KI STORY (BESSER)
-    # -------------------------------
-    plot = generate_story(title, movie.get("Plot"), genre)
-
-    # -------------------------------
-    # RATINGS
-    # -------------------------------
-    def avg_rating(m):
-        if not m.get("ratings"):
-            return 0
-        return round(sum(m["ratings"]) / len(m["ratings"]), 1)
+    # 🔥 FIX: richtiger Aufruf
+    plot = generate_story(
+        title,
+        movie.get("Plot"),
+        genre,
+        chat_id,
+        local.get("series")
+    )
 
     user_rating = avg_rating(local)
 
-    # -------------------------------
-    # SERIES INFO
-    # -------------------------------
-    series = local.get("series")
-    order = local.get("order")
-
     series_text = ""
-    if series:
-        series_text += f"\n📀 {series}"
-    if order:
-        series_text += f" • Teil {order}"
+    if local.get("series"):
+        series_text += f"\n📀 {local['series']}"
+    if local.get("order"):
+        series_text += f" • Teil {local['order']}"
 
-    # -------------------------------
-    # TRENDING BADGE
-    # -------------------------------
     badge = ""
     if local.get("views", 0) >= 5:
         badge = "🔥 Trending\n"
 
-    # -------------------------------
-    # FILM ID
-    # -------------------------------
     movie_id = local.get("id", "0000")
 
-    # -------------------------------
-    # HASHTAGS
-    # -------------------------------
     tags = " ".join([f"#{g.strip().replace(' ', '')}" for g in genre.split(",")])
     tags += " #Neu"
 
-    # -------------------------------
-    # FINAL CAPTION (PRO MAX DESIGN)
-    # -------------------------------
     caption = f"""🎬 {title.upper()} ({year})
 {badge}🔥 4K • {genre_clean}
 ━━━━━━━━━━━━━━
@@ -289,40 +206,17 @@ def send_card(chat_id, movie, local):
 {tags}
 @LibraryOfLegends"""
 
-    # -------------------------------
-    # POSTER
-    # -------------------------------
-    if movie.get("Poster") and movie["Poster"] != "N/A":
-        requests.post(f"{URL}/sendPhoto", json={
-            "chat_id": chat_id,
-            "photo": movie["Poster"]
-        })
-    else:
-        requests.post(f"{URL}/sendPhoto", json={
-            "chat_id": chat_id,
-            "photo": "https://via.placeholder.com/300x450"
-        })
+    # Poster
+    requests.post(f"{URL}/sendPhoto", json={
+        "chat_id": chat_id,
+        "photo": movie["Poster"] if movie.get("Poster") != "N/A" else "https://via.placeholder.com/300x450"
+    })
 
-    # -------------------------------
-    # VIDEO + BUTTONS
-    # -------------------------------
+    # Video
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
         "video": local["file_id"],
-        "caption": caption,
-        "reply_markup": {
-            "inline_keyboard": [
-                [
-                    {"text": "⭐1", "callback_data": f"rate_{movie_id}_1"},
-                    {"text": "⭐2", "callback_data": f"rate_{movie_id}_2"},
-                    {"text": "⭐3", "callback_data": f"rate_{movie_id}_3"}
-                ],
-                [
-                    {"text": "⭐4", "callback_data": f"rate_{movie_id}_4"},
-                    {"text": "⭐5", "callback_data": f"rate_{movie_id}_5"}
-                ]
-            ]
-        }
+        "caption": caption
     })
 
 # ================================
@@ -363,15 +257,10 @@ def handle_video(msg):
 def show_home(chat_id):
     data = load_data()
 
-    collections = build_collections(data)
-
     requests.post(f"{URL}/sendMessage", json={
         "chat_id": chat_id,
         "text": "🎬 Library of Legends"
     })
-
-    show_grid(chat_id, collections["🔥 Trending"])
-    show_grid(chat_id, collections["🆕 Neu"])
 
 # ================================
 # WEBHOOK
@@ -395,13 +284,6 @@ def webhook():
             m["views"] += 1
             save_data(data)
             send_card(chat_id, movie, m)
-
-        elif cb.startswith("rate_"):
-            _, mid, val = cb.split("_")
-            for m in data["movies"]:
-                if m["id"] == mid:
-                    m["ratings"].append(int(val))
-            save_data(data)
 
     msg = update.get("message")
 
