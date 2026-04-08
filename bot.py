@@ -43,7 +43,7 @@ def generate_story(title, plot):
     try:
         if not OPENAI_API_KEY:
             print("❌ Kein OpenAI Key gesetzt")
-            return plot
+            return "Ein spannender Film voller Wendungen und intensiver Momente."
 
         prompt = f"""
 Schreibe eine kurze deutsche Film-Beschreibung im Netflix Stil.
