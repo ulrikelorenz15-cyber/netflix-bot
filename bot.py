@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (UI + AI + RECOMMENDER)
+# 🎬 NETFLIX BOT FINAL (HYBRID STORY MODE)
 # ================================
 
 import os
@@ -51,13 +51,13 @@ def get_movie(title):
         return None
 
 # ================================
-# KI STORY
+# 🧠 HYBRID STORY MODE
 # ================================
 
 def generate_story(title, plot, genre):
     try:
         if not plot or plot == "N/A":
-            plot = f"{title} ist ein Film aus dem Genre {genre}."
+            raise Exception("kein plot")
 
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -73,9 +73,10 @@ Inhalt:
 {plot}
 
 REGELN:
-- 4 bis 5 Sätze
-- konkret, realistisch
-- KEINE Floskeln
+- 2 bis 3 Sätze
+- konkret & direkt
+- keine Floskeln
+- Netflix Stil
 """
             }],
             temperature=1.0
@@ -83,13 +84,21 @@ REGELN:
 
         text = res.choices[0].message.content.strip()
 
-        if len(text) < 100:
-            raise Exception()
+        if len(text) < 80:
+            raise Exception("zu kurz")
+
+        if any(w in text.lower() for w in ["the ", "after ", "when "]):
+            raise Exception("englisch")
 
         return text
 
     except:
-        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte und Entscheidungen, bei der jede Handlung neue Konsequenzen nach sich zieht."
+        return (
+            f"{title} beginnt mit einer Situation, die schnell außer Kontrolle gerät. "
+            f"Ein erfahrener Protagonist gerät in ein brutales Umfeld aus Gewalt und Druck, "
+            f"in dem jede Entscheidung Konsequenzen hat. Während sich die Ereignisse zuspitzen, "
+            f"gerät er zunehmend ins Visier mächtiger Gegner."
+        )
 
 # ================================
 # COLLECTIONS
@@ -111,7 +120,6 @@ def get_recommendations(data, base_movie):
         return []
 
     base_genre = base.get("Genre", "").lower()
-
     scored = []
 
     for m in data["movies"]:
@@ -137,11 +145,10 @@ def get_recommendations(data, base_movie):
         scored.append((score, m))
 
     scored.sort(reverse=True, key=lambda x: x[0])
-
     return [m for _, m in scored[:5]]
 
 # ================================
-# GRID (NETFLIX STYLE)
+# GRID
 # ================================
 
 def show_grid(chat_id, movies, page=0):
@@ -185,32 +192,46 @@ def show_grid(chat_id, movies, page=0):
         })
 
 # ================================
-# 🎬 FILM CARD
+# 🎬 FILM CARD (DEIN DESIGN)
 # ================================
 
 def send_card(chat_id, movie, local):
     title = movie.get("Title")
+    year = movie.get("Year")
+
     genre = movie.get("Genre", "")
-    genre_clean = " • ".join([g.strip() for g in genre.split(",")])
+    genres = [g.strip() for g in genre.split(",")]
+    main_genres = " • ".join(genres[:2])
+
+    imdb = movie.get("imdbRating")
+    runtime = movie.get("Runtime")
+    director = movie.get("Director")
 
     plot = generate_story(title, movie.get("Plot"), genre)
 
-    caption = f"""🎬 {title.upper()} ({movie.get("Year")})
-🔥 4K • {genre_clean}
+    tags = f"#{genres[0]} #{genres[1] if len(genres)>1 else genres[0]} #Neu"
+
+    caption = f"""🎬 {title.upper()} ({year})
+🔥 4K • {main_genres}
 ━━━━━━━━━━━━━━
-⭐ {movie.get("imdbRating")} • ⏱ {movie.get("Runtime")}
-🎥 {movie.get("Director")}
+⭐ {imdb} • ⏱ {runtime} • 🔞 FSK 16
+🎥 {director}
 ━━━━━━━━━━━━━━
 📖 STORY
 {plot}
 ━━━━━━━━━━━━━━
-▶️ #{local.get("id")}"""
+▶️ #{local.get("id")}
+━━━━━━━━━━━━━━
+{tags}
+@LibraryOfLegends"""
 
+    # Poster
     requests.post(f"{URL}/sendPhoto", json={
         "chat_id": chat_id,
-        "photo": movie["Poster"]
+        "photo": movie["Poster"] if movie.get("Poster") != "N/A" else "https://via.placeholder.com/300x450"
     })
 
+    # Video
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
         "video": local["file_id"],
@@ -244,7 +265,7 @@ def send_card(chat_id, movie, local):
             })
 
 # ================================
-# HOME (NETFLIX UI)
+# HOME
 # ================================
 
 def show_home(chat_id):
