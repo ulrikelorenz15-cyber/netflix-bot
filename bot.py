@@ -56,21 +56,58 @@ def get_movie(title):
 
 def generate_story(title, plot, genre):
     try:
+        # 🔥 Fallback wenn kein Plot
         if not plot or plot == "N/A":
-            return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte."
+            return f"{title} erzählt eine intensive Geschichte innerhalb des Genres {genre}, in der Konflikte, Entscheidungen und Konsequenzen im Mittelpunkt stehen."
+
+        prompt = f"""
+Schreibe eine hochwertige deutsche Filmbeschreibung.
+
+Film: {title}
+Genre: {genre}
+
+Inhalt:
+{plot}
+
+REGELN:
+- 4 bis 5 Sätze
+- KEINE Floskeln wie "ein spannender Film"
+- konkret beschreiben, was passiert
+- Namen wie "ein Ermittler", "ein Soldat" etc. benutzen
+- leicht düsterer Netflix Stil
+- realistisch, nicht generisch
+- KEINE Übersetzung → neu formulieren
+
+Nur die Beschreibung.
+"""
 
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[{
-                "role": "user",
-                "content": f"Schreibe eine deutsche Netflix Beschreibung (2 Sätze): {plot}"
-            }]
+            messages=[{"role": "user", "content": prompt}],
+            temperature=1.1
         )
 
-        return res.choices[0].message.content.strip()
+        text = res.choices[0].message.content.strip()
+
+        # 🔥 Sicherheitscheck (zu kurz → neu)
+        if len(text) < 120:
+            raise Exception("zu kurz")
+
+        # 🔥 Englisch-Filter
+        if any(w in text.lower() for w in ["the ", "after ", "when ", "must "]):
+            raise Exception("englisch erkannt")
+
+        return text
 
     except:
-        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte."
+        # 🔥 STARKER FALLBACK (kein Müll mehr)
+        return (
+            f"{title} beginnt mit einer scheinbar kontrollierten Situation, die schnell außer Kontrolle gerät. "
+            f"Ein zentraler Charakter sieht sich gezwungen, sich durch ein immer gefährlicher werdendes Umfeld zu bewegen, "
+            f"in dem Gewalt, Druck und Entscheidungen eng miteinander verknüpft sind. "
+            f"Mit jeder Entwicklung verschärfen sich die Konflikte und ziehen weitere Kreise. "
+            f"Am Ende steht nicht nur ein persönliches Schicksal auf dem Spiel, sondern weit mehr."
+        )
 
 # ================================
 # KI REIHEN SYSTEM
