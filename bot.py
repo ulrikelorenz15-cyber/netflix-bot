@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL ULTIMATE
+# 🎬 NETFLIX BOT FINAL ULTIMATE V2
 # ================================
 
 import os
@@ -23,7 +23,12 @@ DATA_FILE = "data.json"
 # ================================
 
 def load_data():
-    default = {"movies": [], "categories": {}}
+    default = {
+        "movies": [],
+        "categories": {},
+        "collections": {},
+        "series": {}
+    }
 
     if os.path.exists(DATA_FILE):
         try:
@@ -61,7 +66,7 @@ def get_movie(title):
         return None
 
 # ================================
-# KI STORY (NETFLIX STYLE)
+# KI STORY
 # ================================
 
 def generate_story(title, plot, genre):
@@ -69,39 +74,54 @@ def generate_story(title, plot, genre):
         if not plot or plot == "N/A":
             plot = f"{title} ist ein Film aus dem Genre {genre}."
 
-        prompt = f"""
-Schreibe eine deutsche Filmbeschreibung im Netflix Stil.
-
-Film: {title}
-Genre: {genre}
-
-Inhalt:
-{plot}
-
-REGELN:
-- 2–3 Sätze
-- konkret, direkt
-- KEINE Floskeln
-- klingt wie echte Netflix Beschreibung
-
-Nur Text.
-"""
-
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=1.2
+            messages=[{
+                "role": "user",
+                "content": f"Schreibe eine kurze deutsche Netflix Filmbeschreibung (2-3 Sätze): {plot}"
+            }]
         )
 
-        text = res.choices[0].message.content.strip()
-
-        if len(text) < 40:
-            raise Exception("zu kurz")
-
-        return text
+        return res.choices[0].message.content.strip()
 
     except:
-        return f"{title} entwickelt sich aus einem scheinbar kontrollierten Ereignis zu einer gefährlichen Kettenreaktion aus Gewalt, Druck und Entscheidungen. Je weiter die Handlung voranschreitet, desto mehr geraten die Figuren in ein Netz aus Konflikten und Konsequenzen."
+        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte, Druck und Konsequenzen."
+
+# ================================
+# REIHEN ERKENNUNG
+# ================================
+
+def detect_series(title):
+    t = title.lower()
+
+    if "fast" in t:
+        return "Fast & Furious"
+    if "harry potter" in t:
+        return "Harry Potter"
+    if "star wars" in t:
+        return "Star Wars"
+    if "bond" in t:
+        return "James Bond"
+
+    return None
+
+# ================================
+# COLLECTIONS ERKENNUNG
+# ================================
+
+def detect_collection(title):
+    t = title.lower()
+
+    if "marvel" in t or "avengers" in t:
+        return "Marvel"
+    if "dc" in t or "batman" in t:
+        return "DC"
+    if "jurassic" in t:
+        return "Jurassic Park"
+    if "rocky" in t:
+        return "Rocky"
+
+    return None
 
 # ================================
 # BANNER
@@ -117,7 +137,6 @@ def create_banner(title):
         font = ImageFont.load_default()
 
     bbox = draw.textbbox((0,0), title.upper(), font=font)
-
     x = (1280 - (bbox[2]-bbox[0]))//2
     y = (720 - (bbox[3]-bbox[1]))//2
 
@@ -159,7 +178,11 @@ def send_buttons(chat_id, text, buttons):
 def show_home(chat_id):
     send_buttons(chat_id, "🎬 Library of Legends", [
         [{"text": "🔥 Trending", "callback_data": "trending"}],
-        [{"text": "🎬 Genres", "callback_data": "genres"}]
+        [{"text": "🆕 Neu", "callback_data": "new"}],
+        [{"text": "🎬 Genres", "callback_data": "genres"}],
+        [{"text": "🎞 Collections", "callback_data": "collections"}],
+        [{"text": "🎬 Reihen", "callback_data": "series"}],
+        [{"text": "🔤 A–Z", "callback_data": "az"}]
     ])
 
 def show_genres(chat_id, data):
@@ -169,6 +192,19 @@ def show_genres(chat_id, data):
 def show_movies(chat_id, movies):
     buttons = [[{"text": m, "callback_data": f"movie_{m}"}] for m in movies]
     send_buttons(chat_id, "🎬 Filme", buttons)
+
+def show_collections(chat_id, data):
+    buttons = [[{"text": c, "callback_data": f"col_{c}"}] for c in data["collections"]]
+    send_buttons(chat_id, "🎞 Collections", buttons)
+
+def show_series(chat_id, data):
+    buttons = [[{"text": s, "callback_data": f"series_{s}"}] for s in data["series"]]
+    send_buttons(chat_id, "🎬 Reihen", buttons)
+
+def show_az(chat_id):
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    buttons = [[{"text": l, "callback_data": f"az_{l}"}] for l in alphabet]
+    send_buttons(chat_id, "🔤 A–Z", buttons)
 
 # ================================
 # FILM CARD
@@ -196,7 +232,6 @@ def send_film_card(chat_id, movie, file_id, movie_id):
 #{" #".join([g.strip() for g in genre.split(",")])}
 @LibraryOfLegends"""
 
-    # Poster oder Banner
     if movie["Poster"] != "N/A":
         requests.post(f"{URL}/sendPhoto", json={"chat_id": chat_id, "photo": movie["Poster"]})
     else:
@@ -204,7 +239,6 @@ def send_film_card(chat_id, movie, file_id, movie_id):
         with open(path, "rb") as img:
             requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": chat_id})
 
-    # Video
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
         "video": file_id,
@@ -238,12 +272,20 @@ def handle_video(message):
     })
 
     categorize(data, movie["Title"], movie["Genre"])
+
+    # Collections
+    col = detect_collection(movie["Title"])
+    if col:
+        data["collections"].setdefault(col, []).append(movie["Title"])
+
+    # Serien
+    ser = detect_series(movie["Title"])
+    if ser:
+        data["series"].setdefault(ser, []).append(movie["Title"])
+
     save_data(data)
 
-    # an User
     send_film_card(chat_id, movie, video["file_id"], movie_id)
-
-    # in Kanal
     send_film_card(CHANNEL, movie, video["file_id"], movie_id)
 
 # ================================
@@ -253,6 +295,7 @@ def handle_video(message):
 def show_movie(chat_id, title):
     data = load_data()
     m = next((x for x in data["movies"] if x["title"] == title), None)
+
     if not m:
         return
 
@@ -281,14 +324,35 @@ def webhook():
         data = load_data()
 
         if data_cb == "trending":
-            movies = [m["title"] for m in get_trending(data)]
-            show_movies(chat_id, movies)
+            show_movies(chat_id, [m["title"] for m in get_trending(data)])
+
+        elif data_cb == "new":
+            show_movies(chat_id, [m["title"] for m in list(reversed(data["movies"]))[:10]])
 
         elif data_cb == "genres":
             show_genres(chat_id, data)
 
+        elif data_cb == "collections":
+            show_collections(chat_id, data)
+
+        elif data_cb == "series":
+            show_series(chat_id, data)
+
+        elif data_cb == "az":
+            show_az(chat_id)
+
+        elif data_cb.startswith("az_"):
+            letter = data_cb.replace("az_", "")
+            show_movies(chat_id, [m["title"] for m in data["movies"] if m["title"].startswith(letter)])
+
         elif data_cb.startswith("genre_"):
             show_movies(chat_id, data["categories"].get(data_cb.replace("genre_", ""), []))
+
+        elif data_cb.startswith("col_"):
+            show_movies(chat_id, data["collections"].get(data_cb.replace("col_", ""), []))
+
+        elif data_cb.startswith("series_"):
+            show_movies(chat_id, data["series"].get(data_cb.replace("series_", ""), []))
 
         elif data_cb.startswith("movie_"):
             show_movie(chat_id, data_cb.replace("movie_", ""))
@@ -299,10 +363,8 @@ def webhook():
     if not message:
         return "ok"
 
-    chat_id = message["chat"]["id"]
-
     if "text" in message and message["text"] == "/start":
-        show_home(chat_id)
+        show_home(message["chat"]["id"])
 
     elif "video" in message or "document" in message:
         handle_video(message)
@@ -312,10 +374,6 @@ def webhook():
 @app.route("/")
 def home():
     return "Bot läuft 🚀"
-
-# ================================
-# START
-# ================================
 
 if __name__ == "__main__":
     webhook_url = os.getenv("WEBHOOK_URL")
