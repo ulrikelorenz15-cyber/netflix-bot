@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL ULTIMATE V2
+# 🎬 NETFLIX BOT FINAL BOSS MODE
 # ================================
 
 import os
@@ -78,88 +78,113 @@ def generate_story(title, plot, genre):
             model="gpt-4.1-mini",
             messages=[{
                 "role": "user",
-                "content": f"Schreibe eine kurze deutsche Netflix Filmbeschreibung (2-3 Sätze): {plot}"
+                "content": f"Schreibe eine deutsche Netflix Filmbeschreibung (2-3 Sätze, konkret, realistisch): {plot}"
             }]
         )
 
-        return res.choices[0].message.content.strip()
+        text = res.choices[0].message.content.strip()
+
+        if len(text) < 40:
+            raise Exception()
+
+        return text
 
     except:
-        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte, Druck und Konsequenzen."
+        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte, Druck und Konsequenzen, bei der jede Entscheidung neue Folgen hat."
 
 # ================================
-# REIHEN ERKENNUNG
+# AUTO COLLECTIONS
 # ================================
+
+def build_auto_collections(data):
+    collections = {
+        "🔥 Beste Action": [],
+        "🧠 Mystery": [],
+        "😂 Komödie": [],
+        "🚀 Sci-Fi": [],
+        "👑 Top IMDb": []
+    }
+
+    for m in data["movies"]:
+        movie = get_movie(m["title"])
+        if not movie:
+            continue
+
+        genre = movie.get("Genre", "").lower()
+        rating = float(movie.get("imdbRating", "0"))
+
+        if "action" in genre:
+            collections["🔥 Beste Action"].append(m)
+
+        if "mystery" in genre or "thriller" in genre:
+            collections["🧠 Mystery"].append(m)
+
+        if "comedy" in genre:
+            collections["😂 Komödie"].append(m)
+
+        if "sci-fi" in genre:
+            collections["🚀 Sci-Fi"].append(m)
+
+        if rating >= 7.5:
+            collections["👑 Top IMDb"].append(m)
+
+    return collections
+
+# ================================
+# SERIES
+# ================================
+
+SERIES = {
+    "Bourne": ["Bourne Identity", "Bourne Supremacy", "Bourne Ultimatum"],
+    "John Wick": ["John Wick", "Chapter 2", "Chapter 3", "Chapter 4"],
+}
 
 def detect_series(title):
-    t = title.lower()
-
-    if "fast" in t:
-        return "Fast & Furious"
-    if "harry potter" in t:
-        return "Harry Potter"
-    if "star wars" in t:
-        return "Star Wars"
-    if "bond" in t:
-        return "James Bond"
-
+    for name, arr in SERIES.items():
+        for a in arr:
+            if a.lower() in title.lower():
+                return name
     return None
 
 # ================================
-# COLLECTIONS ERKENNUNG
+# GRID (SWIPE UI)
 # ================================
 
-def detect_collection(title):
-    t = title.lower()
+def show_grid(chat_id, movies, page=0):
+    per_page = 3
+    start = page * per_page
+    end = start + per_page
 
-    if "marvel" in t or "avengers" in t:
-        return "Marvel"
-    if "dc" in t or "batman" in t:
-        return "DC"
-    if "jurassic" in t:
-        return "Jurassic Park"
-    if "rocky" in t:
-        return "Rocky"
+    subset = movies[start:end]
 
-    return None
+    for m in subset:
+        movie = get_movie(m["title"])
+        if not movie:
+            continue
 
-# ================================
-# BANNER
-# ================================
+        caption = f"🎬 {movie['Title']} • ⭐ {movie['imdbRating']}"
 
-def create_banner(title):
-    img = Image.new("RGB", (1280, 720), (20, 20, 20))
-    draw = ImageDraw.Draw(img)
+        requests.post(f"{URL}/sendPhoto", json={
+            "chat_id": chat_id,
+            "photo": movie["Poster"],
+            "caption": caption,
+            "reply_markup": {
+                "inline_keyboard": [[
+                    {"text": "▶️ Öffnen", "callback_data": f"movie_{movie['Title']}"}
+                ]]
+            }
+        })
 
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 80)
-    except:
-        font = ImageFont.load_default()
+    nav = []
+    if page > 0:
+        nav.append({"text": "⬅️", "callback_data": f"grid_{page-1}"})
+    if end < len(movies):
+        nav.append({"text": "➡️", "callback_data": f"grid_{page+1}"})
 
-    bbox = draw.textbbox((0,0), title.upper(), font=font)
-    x = (1280 - (bbox[2]-bbox[0]))//2
-    y = (720 - (bbox[3]-bbox[1]))//2
+    buttons = [nav] if nav else []
+    buttons.append([{"text": "🏠 Home", "callback_data": "home"}])
 
-    draw.text((x,y), title.upper(), fill="white", font=font)
-
-    path = f"/tmp/{title}.jpg"
-    img.save(path)
-    return path
-
-# ================================
-# SORTIERUNG
-# ================================
-
-def categorize(data, title, genre):
-    for g in genre.split(","):
-        data["categories"].setdefault(g.strip(), []).append(title)
-
-# ================================
-# TRENDING
-# ================================
-
-def get_trending(data):
-    return sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True)[:10]
+    send_buttons(chat_id, "🎬 Browse", buttons)
 
 # ================================
 # UI
@@ -177,50 +202,34 @@ def send_buttons(chat_id, text, buttons):
 
 def show_home(chat_id):
     send_buttons(chat_id, "🎬 Library of Legends", [
-        [{"text": "🔥 Trending", "callback_data": "trending"}],
-        [{"text": "🆕 Neu", "callback_data": "new"}],
-        [{"text": "🎬 Genres", "callback_data": "genres"}],
-        [{"text": "🎞 Collections", "callback_data": "collections"}],
-        [{"text": "🎬 Reihen", "callback_data": "series"}],
-        [{"text": "🔤 A–Z", "callback_data": "az"}]
+        [
+            {"text": "🔥 Trending", "callback_data": "trending"},
+            {"text": "🆕 Neu", "callback_data": "new"}
+        ],
+        [
+            {"text": "⭐ Top IMDb", "callback_data": "top"},
+            {"text": "🎞 Collections", "callback_data": "collections"}
+        ],
+        [
+            {"text": "🎬 Genres", "callback_data": "genres"},
+            {"text": "🎬 Reihen", "callback_data": "series"}
+        ]
     ])
-
-def show_genres(chat_id, data):
-    buttons = [[{"text": g, "callback_data": f"genre_{g}"}] for g in data["categories"]]
-    send_buttons(chat_id, "🎬 Genres", buttons)
-
-def show_movies(chat_id, movies):
-    buttons = [[{"text": m, "callback_data": f"movie_{m}"}] for m in movies]
-    send_buttons(chat_id, "🎬 Filme", buttons)
-
-def show_collections(chat_id, data):
-    buttons = [[{"text": c, "callback_data": f"col_{c}"}] for c in data["collections"]]
-    send_buttons(chat_id, "🎞 Collections", buttons)
-
-def show_series(chat_id, data):
-    buttons = [[{"text": s, "callback_data": f"series_{s}"}] for s in data["series"]]
-    send_buttons(chat_id, "🎬 Reihen", buttons)
-
-def show_az(chat_id):
-    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    buttons = [[{"text": l, "callback_data": f"az_{l}"}] for l in alphabet]
-    send_buttons(chat_id, "🔤 A–Z", buttons)
 
 # ================================
 # FILM CARD
 # ================================
 
 def send_film_card(chat_id, movie, file_id, movie_id):
-    genre = movie["Genre"]
-    genre_clean = " • ".join([g.strip() for g in genre.split(",")])
+    genre = " • ".join(movie["Genre"].split(","))
     actors = ", ".join(movie["Actors"].split(", ")[:3])
 
-    plot = generate_story(movie["Title"], movie.get("Plot", ""), genre)
+    plot = generate_story(movie["Title"], movie.get("Plot", ""), movie["Genre"])
 
     caption = f"""🎬 {movie["Title"].upper()} ({movie["Year"]})
-🔥 4K • {genre_clean}
+🔥 4K • {genre}
 ━━━━━━━━━━━━━━
-⭐ {movie["imdbRating"]} • ⏱ {movie["Runtime"]} • 🔞 FSK 16
+⭐ {movie["imdbRating"]} • ⏱ {movie["Runtime"]}
 🎥 {movie["Director"]}
 🎭 {actors}
 ━━━━━━━━━━━━━━
@@ -228,16 +237,12 @@ def send_film_card(chat_id, movie, file_id, movie_id):
 {plot}
 ━━━━━━━━━━━━━━
 ▶️ #{movie_id}
-━━━━━━━━━━━━━━
-#{" #".join([g.strip() for g in genre.split(",")])}
-@LibraryOfLegends"""
+━━━━━━━━━━━━━━"""
 
-    if movie["Poster"] != "N/A":
-        requests.post(f"{URL}/sendPhoto", json={"chat_id": chat_id, "photo": movie["Poster"]})
-    else:
-        path = create_banner(movie["Title"])
-        with open(path, "rb") as img:
-            requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": chat_id})
+    requests.post(f"{URL}/sendPhoto", json={
+        "chat_id": chat_id,
+        "photo": movie["Poster"]
+    })
 
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
@@ -253,60 +258,28 @@ def handle_video(message):
     data = load_data()
 
     video = message.get("video") or message.get("document")
-    chat_id = message["chat"]["id"]
     title = message.get("caption", "Unknown")
 
     movie = get_movie(title)
     if not movie:
-        send_message(chat_id, "❌ Film nicht gefunden")
         return
 
     movie_id = get_next_id(data)
 
-    data["movies"].append({
+    entry = {
         "id": movie_id,
         "title": movie["Title"],
         "file_id": video["file_id"],
         "genre": movie["Genre"],
         "views": 0
-    })
+    }
 
-    categorize(data, movie["Title"], movie["Genre"])
-
-    # Collections
-    col = detect_collection(movie["Title"])
-    if col:
-        data["collections"].setdefault(col, []).append(movie["Title"])
-
-    # Serien
-    ser = detect_series(movie["Title"])
-    if ser:
-        data["series"].setdefault(ser, []).append(movie["Title"])
+    data["movies"].append(entry)
 
     save_data(data)
 
-    send_film_card(chat_id, movie, video["file_id"], movie_id)
+    send_film_card(message["chat"]["id"], movie, video["file_id"], movie_id)
     send_film_card(CHANNEL, movie, video["file_id"], movie_id)
-
-# ================================
-# SHOW MOVIE
-# ================================
-
-def show_movie(chat_id, title):
-    data = load_data()
-    m = next((x for x in data["movies"] if x["title"] == title), None)
-
-    if not m:
-        return
-
-    movie = get_movie(title)
-    if not movie:
-        return
-
-    m["views"] += 1
-    save_data(data)
-
-    send_film_card(chat_id, movie, m["file_id"], m["id"])
 
 # ================================
 # WEBHOOK
@@ -323,51 +296,49 @@ def webhook():
         data_cb = update["callback_query"]["data"]
         data = load_data()
 
-        if data_cb == "trending":
-            show_movies(chat_id, [m["title"] for m in get_trending(data)])
+        if data_cb == "home":
+            show_home(chat_id)
+
+        elif data_cb == "trending":
+            show_grid(chat_id, data["movies"], 0)
 
         elif data_cb == "new":
-            show_movies(chat_id, [m["title"] for m in list(reversed(data["movies"]))[:10]])
+            show_grid(chat_id, list(reversed(data["movies"])), 0)
 
-        elif data_cb == "genres":
-            show_genres(chat_id, data)
+        elif data_cb == "top":
+            auto = build_auto_collections(data)
+            show_grid(chat_id, auto["👑 Top IMDb"], 0)
 
         elif data_cb == "collections":
-            show_collections(chat_id, data)
+            auto = build_auto_collections(data)
+            buttons = [[{"text": k, "callback_data": f"auto_{k}"}] for k in auto]
+            send_buttons(chat_id, "🎞 Collections", buttons)
 
-        elif data_cb == "series":
-            show_series(chat_id, data)
-
-        elif data_cb == "az":
-            show_az(chat_id)
-
-        elif data_cb.startswith("az_"):
-            letter = data_cb.replace("az_", "")
-            show_movies(chat_id, [m["title"] for m in data["movies"] if m["title"].startswith(letter)])
-
-        elif data_cb.startswith("genre_"):
-            show_movies(chat_id, data["categories"].get(data_cb.replace("genre_", ""), []))
-
-        elif data_cb.startswith("col_"):
-            show_movies(chat_id, data["collections"].get(data_cb.replace("col_", ""), []))
-
-        elif data_cb.startswith("series_"):
-            show_movies(chat_id, data["series"].get(data_cb.replace("series_", ""), []))
+        elif data_cb.startswith("auto_"):
+            auto = build_auto_collections(data)
+            name = data_cb.replace("auto_", "")
+            show_grid(chat_id, auto.get(name, []), 0)
 
         elif data_cb.startswith("movie_"):
-            show_movie(chat_id, data_cb.replace("movie_", ""))
+            title = data_cb.replace("movie_", "")
+            m = next((x for x in data["movies"] if x["title"] == title), None)
+            if m:
+                movie = get_movie(title)
+                send_film_card(chat_id, movie, m["file_id"], m["id"])
+
+        elif data_cb.startswith("grid_"):
+            page = int(data_cb.split("_")[1])
+            show_grid(chat_id, data["movies"], page)
 
         return "ok"
 
     message = update.get("message")
-    if not message:
-        return "ok"
 
-    if "text" in message and message["text"] == "/start":
-        show_home(message["chat"]["id"])
-
-    elif "video" in message or "document" in message:
+    if message and ("video" in message or "document" in message):
         handle_video(message)
+
+    if message and message.get("text") == "/start":
+        show_home(message["chat"]["id"])
 
     return "ok"
 
@@ -378,5 +349,4 @@ def home():
 if __name__ == "__main__":
     webhook_url = os.getenv("WEBHOOK_URL")
     requests.get(f"{URL}/setWebhook?url={webhook_url}/webhook/{TOKEN}")
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
