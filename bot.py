@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT ULTIMATE FINAL
+# 🎬 NETFLIX BOT ULTIMATE FINAL V2
 # ================================
 
 import os
@@ -17,6 +17,7 @@ OMDB_KEY = "a3776f86"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DATA_FILE = "data.json"
+USER_STYLE = {}  # 🔥 Style pro User
 
 # ================================
 # DATA
@@ -45,33 +46,66 @@ def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
 # ================================
-# KI STORY SYSTEM
+# FILMREIHEN ERKENNUNG
 # ================================
 
-def generate_story(title, plot, genre, style="netflix"):
+def detect_series(title):
+    t = title.lower()
+
+    if any(x in t for x in ["iron man", "avengers", "thor"]):
+        return "marvel"
+    if "fast" in t:
+        return "fast"
+    if "john wick" in t:
+        return "wick"
+    if "batman" in t:
+        return "dc"
+
+    return "default"
+
+# ================================
+# KI STORY SYSTEM (UPGRADE)
+# ================================
+
+def generate_story(title, plot, genre, user_id):
     try:
-        if not plot:
-            return "Spannende Geschichte.", "Keine Beschreibung verfügbar."
+        style = USER_STYLE.get(user_id, "netflix")
+        series = detect_series(title)
+
+        series_map = {
+            "marvel": "episch und heldenhaft",
+            "fast": "rasant und familiär",
+            "wick": "brutal und kompromisslos",
+            "dc": "düster und komplex",
+            "default": "realistisch"
+        }
+
+        style_map = {
+            "netflix": "dramatisch und spannend",
+            "prime": "klar und hochwertig",
+            "dark": "sehr düster und intensiv"
+        }
 
         prompt = f"""
-Schreibe eine hochwertige deutsche Filmbeschreibung.
+Schreibe eine deutsche Filmbeschreibung.
 
 Film: {title}
 Genre: {genre}
 
+Serie Stil:
+{series_map[series]}
+
+Plattform Stil:
+{style_map[style]}
+
 Inhalt:
 {plot}
 
-AUFGABEN:
+Erstelle:
 1. Kurzbeschreibung (1 Satz)
 2. Lange Beschreibung (4-6 Sätze)
 
-REGELN:
-- NUR Deutsch
-- NICHT übersetzen → neu formulieren
-- KEINE Floskeln wie "Ein spannender Film"
-- Netflix Stil
-- konkret & realistisch
+Nur Deutsch.
 
 Format:
 KURZ: ...
@@ -86,8 +120,7 @@ LANG: ...
 
         text = res.choices[0].message.content.strip()
 
-        short = ""
-        long = ""
+        short, long = "", ""
 
         if "KURZ:" in text and "LANG:" in text:
             short = text.split("KURZ:")[1].split("LANG:")[0].strip()
@@ -95,24 +128,15 @@ LANG: ...
         else:
             long = text
 
-        # 🔥 ABSICHERUNG: falls Englisch erkannt
+        # 🔥 fallback Deutsch
         if any(w in long.lower() for w in ["the ", "after ", "when "]):
-            print("⚠️ Englisch erkannt → KI fallback")
-            return (
-                "Ein Ermittler gerät in ein gefährliches Netz aus Gewalt und Korruption.",
-                "Nach einem eskalierten Einsatz wird ein angeschlagener Ermittler in die kriminelle Unterwelt gezogen. Während er versucht, den Sohn eines einflussreichen Politikers zu retten, stößt er auf ein Geflecht aus Verrat, Macht und Gewalt. Je tiefer er eintaucht, desto mehr verschwimmen die Grenzen zwischen Recht und Unrecht. Schließlich wird klar, dass hinter allem eine Verschwörung steckt, die weit über den ursprünglichen Fall hinausgeht."
-            )
+            return "Ein intensiver Film voller Spannung.", "Ein Ermittler gerät in ein gefährliches Netz aus Gewalt und Intrigen."
 
         return short, long
 
     except Exception as e:
         print("❌ KI Fehler:", e)
-
-        # 🔥 IMMER DEUTSCHER FALLBACK
-        return (
-            "Ein intensiver Film voller Spannung.",
-            "Ein abgebrühter Ermittler gerät in einen gefährlichen Strudel aus Gewalt und Intrigen. Während er versucht, einen vermissten Jungen zu retten, stößt er auf dunkle Machenschaften innerhalb der Stadt. Jeder Schritt bringt ihn näher an eine Wahrheit, die mächtige Gegner um jeden Preis verbergen wollen."
-        )
+        return "Ein intensiver Film.", "Keine Beschreibung verfügbar."
 
 # ================================
 # OMDb
@@ -161,10 +185,6 @@ def categorize(data, title, genre, year):
         g = g.strip()
         data["categories"].setdefault(g, []).append(title)
 
-    y = int(year) if year.isdigit() else 2025
-    group = "2020+" if y >= 2020 else "2010+"
-    data["years"].setdefault(group, []).append(title)
-
 # ================================
 # UI
 # ================================
@@ -176,10 +196,24 @@ def send_buttons(chat_id, text, buttons):
         "reply_markup": {"inline_keyboard": buttons}
     })
 
+def send_message(chat_id, text):
+    requests.post(f"{URL}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": text
+    })
+
 def show_home(chat_id):
     send_buttons(chat_id, "🎬 Library of Legends", [
         [{"text": "🎬 Genres", "callback_data": "genres"}],
-        [{"text": "📅 Jahre", "callback_data": "years"}]
+        [{"text": "🧠 Style", "callback_data": "styles"}]
+    ])
+
+def show_styles(chat_id):
+    send_buttons(chat_id, "🧠 Style wählen:", [
+        [{"text": "🎬 Netflix", "callback_data": "style_netflix"}],
+        [{"text": "🛒 Prime", "callback_data": "style_prime"}],
+        [{"text": "🌑 Dark", "callback_data": "style_dark"}],
+        [{"text": "🔙", "callback_data": "home"}]
     ])
 
 def show_genres(chat_id, data):
@@ -188,7 +222,14 @@ def show_genres(chat_id, data):
     send_buttons(chat_id, "🎬 Genres", buttons)
 
 def show_movies(chat_id, movies):
-    buttons = [[{"text": m, "callback_data": f"movie_{m}"}] for m in movies[:10]]
+    buttons = []
+
+    for m in movies[:10]:
+        buttons.append([{
+            "text": f"🎬 {m}",
+            "callback_data": f"movie_{m}"
+        }])
+
     buttons.append([{"text": "🔙", "callback_data": "home"}])
     send_buttons(chat_id, "🎬 Filme", buttons)
 
@@ -198,8 +239,8 @@ def show_movies(chat_id, movies):
 
 def show_movie(chat_id, title):
     data = load_data()
-
     local = next((m for m in data["movies"] if m["title"] == title), None)
+
     if not local:
         return
 
@@ -207,7 +248,7 @@ def show_movie(chat_id, title):
     if not movie:
         return
 
-    short, plot = generate_story(title, movie["Plot"], movie["Genre"])
+    short, plot = generate_story(title, movie["Plot"], movie["Genre"], chat_id)
 
     caption = f"""🎬 {title.upper()} ({movie["Year"]})
 🔥 {movie["Genre"]}
@@ -223,17 +264,11 @@ def show_movie(chat_id, title):
 ━━━━━━━━━━━━━━"""
 
     if movie["Poster"] != "N/A":
-        requests.post(f"{URL}/sendPhoto", json={
-            "chat_id": chat_id,
-            "photo": movie["Poster"]
-        })
+        requests.post(f"{URL}/sendPhoto", json={"chat_id": chat_id, "photo": movie["Poster"]})
     else:
         path = create_banner(title)
         with open(path, "rb") as img:
-            requests.post(f"{URL}/sendPhoto",
-                files={"photo": img},
-                data={"chat_id": chat_id}
-            )
+            requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": chat_id})
 
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
@@ -242,7 +277,7 @@ def show_movie(chat_id, title):
     })
 
 # ================================
-# VIDEO UPLOAD
+# VIDEO UPLOAD (MIT CARD)
 # ================================
 
 def handle_video(message):
@@ -260,10 +295,8 @@ def handle_video(message):
     genre = movie["Genre"]
     year = movie["Year"]
 
-    # 🧠 KI STORY
-    short, plot = generate_story(title, movie["Plot"], genre)
+    short, plot = generate_story(title, movie["Plot"], genre, message["chat"]["id"])
 
-    # 🎬 SPEICHERN
     data["movies"].append({
         "title": title,
         "file_id": video["file_id"],
@@ -274,7 +307,6 @@ def handle_video(message):
     categorize(data, title, genre, year)
     save_data(data)
 
-    # 🎬 CAPTION (NETFLIX STYLE)
     caption = f"""🎬 {title.upper()} ({year})
 🔥 {genre}
 ━━━━━━━━━━━━━━
@@ -286,37 +318,22 @@ def handle_video(message):
 
 📖 STORY
 {plot}
-━━━━━━━━━━━━━━
-#{" #".join([g.strip() for g in genre.split(",")])}
-@LibraryOfLegends"""
+━━━━━━━━━━━━━━"""
 
-    # 📸 POSTER ODER BANNER
-    try:
-        if movie["Poster"] != "N/A":
-            requests.post(f"{URL}/sendPhoto", json={
-                "chat_id": CHANNEL,
-                "photo": movie["Poster"]
-            })
-        else:
-            path = create_banner(title)
-            with open(path, "rb") as img:
-                requests.post(f"{URL}/sendPhoto",
-                    files={"photo": img},
-                    data={"chat_id": CHANNEL}
-                )
-    except Exception as e:
-        print("❌ Poster Fehler:", e)
+    # Poster
+    if movie["Poster"] != "N/A":
+        requests.post(f"{URL}/sendPhoto", json={"chat_id": CHANNEL, "photo": movie["Poster"]})
+    else:
+        path = create_banner(title)
+        with open(path, "rb") as img:
+            requests.post(f"{URL}/sendPhoto", files={"photo": img}, data={"chat_id": CHANNEL})
 
-    # 🎬 VIDEO + CARD
-    try:
-        requests.post(f"{URL}/sendVideo", json={
-            "chat_id": CHANNEL,
-            "video": video["file_id"],
-            "caption": caption
-        })
-        print("✅ Film + Card im Kanal")
-    except Exception as e:
-        print("❌ Kanal Fehler:", e)
+    # Video + Card
+    requests.post(f"{URL}/sendVideo", json={
+        "chat_id": CHANNEL,
+        "video": video["file_id"],
+        "caption": caption
+    })
 
 # ================================
 # WEBHOOK
@@ -339,9 +356,15 @@ def webhook():
         elif data_cb == "genres":
             show_genres(chat_id, data)
 
+        elif data_cb == "styles":
+            show_styles(chat_id)
+
+        elif data_cb.startswith("style_"):
+            USER_STYLE[chat_id] = data_cb.replace("style_", "")
+            send_message(chat_id, "✅ Style gespeichert")
+
         elif data_cb.startswith("genre_"):
-            g = data_cb.replace("genre_", "")
-            show_movies(chat_id, data["categories"].get(g, []))
+            show_movies(chat_id, data["categories"].get(data_cb.replace("genre_", ""), []))
 
         elif data_cb.startswith("movie_"):
             show_movie(chat_id, data_cb.replace("movie_", ""))
@@ -365,10 +388,6 @@ def webhook():
 @app.route("/")
 def home():
     return "Bot läuft 🚀"
-
-# ================================
-# START
-# ================================
 
 if __name__ == "__main__":
     webhook_url = os.getenv("WEBHOOK_URL")
