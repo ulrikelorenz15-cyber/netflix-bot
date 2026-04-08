@@ -257,23 +257,65 @@ def handle_video(message):
         print("❌ Film nicht gefunden")
         return
 
+    title = movie["Title"]
+    genre = movie["Genre"]
+    year = movie["Year"]
+
+    # 🧠 KI STORY
+    short, plot = generate_story(title, movie["Plot"], genre)
+
+    # 🎬 SPEICHERN
     data["movies"].append({
-        "title": movie["Title"],
+        "title": title,
         "file_id": video["file_id"],
-        "genre": movie["Genre"],
-        "year": movie["Year"]
+        "genre": genre,
+        "year": year
     })
 
-    categorize(data, movie["Title"], movie["Genre"], movie["Year"])
+    categorize(data, title, genre, year)
     save_data(data)
 
+    # 🎬 CAPTION (NETFLIX STYLE)
+    caption = f"""🎬 {title.upper()} ({year})
+🔥 {genre}
+━━━━━━━━━━━━━━
+⭐ {movie["imdbRating"]} • ⏱ {movie["Runtime"]}
+🎥 {movie["Director"]}
+🎭 {", ".join(movie["Actors"].split(", ")[:3])}
+━━━━━━━━━━━━━━
+🧠 {short}
+
+📖 STORY
+{plot}
+━━━━━━━━━━━━━━
+#{" #".join([g.strip() for g in genre.split(",")])}
+@LibraryOfLegends"""
+
+    # 📸 POSTER ODER BANNER
+    try:
+        if movie["Poster"] != "N/A":
+            requests.post(f"{URL}/sendPhoto", json={
+                "chat_id": CHANNEL,
+                "photo": movie["Poster"]
+            })
+        else:
+            path = create_banner(title)
+            with open(path, "rb") as img:
+                requests.post(f"{URL}/sendPhoto",
+                    files={"photo": img},
+                    data={"chat_id": CHANNEL}
+                )
+    except Exception as e:
+        print("❌ Poster Fehler:", e)
+
+    # 🎬 VIDEO + CARD
     try:
         requests.post(f"{URL}/sendVideo", json={
             "chat_id": CHANNEL,
             "video": video["file_id"],
-            "caption": f"🎬 {movie['Title']}"
+            "caption": caption
         })
-        print("✅ Film in Kanal gesendet")
+        print("✅ Film + Card im Kanal")
     except Exception as e:
         print("❌ Kanal Fehler:", e)
 
