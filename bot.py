@@ -41,15 +41,19 @@ data = load_data()
 
 def generate_story(title, plot):
     try:
+        if not OPENAI_API_KEY:
+            print("❌ Kein OpenAI Key gesetzt")
+            return plot
+
         prompt = f"""
-Schreibe eine hochwertige deutsche Film-Beschreibung im Netflix Stil.
+Schreibe eine kurze deutsche Film-Beschreibung im Netflix Stil.
 
 Film: {title}
 
 Inhalt:
 {plot}
 
-Maximal 4 Sätze. Spannend, natürlich und professionell.
+Maximal 3-4 Sätze. Natürliches Deutsch.
 """
 
         response = client.chat.completions.create(
@@ -57,11 +61,15 @@ Maximal 4 Sätze. Spannend, natürlich und professionell.
             messages=[{"role": "user", "content": prompt}]
         )
 
-        return response.choices[0].message.content.strip()
+        text = response.choices[0].message.content.strip()
+
+        print("✅ KI Story generiert")
+
+        return text
 
     except Exception as e:
-        print("KI Fehler:", e)
-        return plot  # fallback
+        print("❌ KI ERROR:", e)
+        return plot
 
 # ================================
 # SEND MESSAGE
