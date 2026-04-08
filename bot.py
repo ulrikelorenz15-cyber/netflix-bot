@@ -172,39 +172,118 @@ def show_grid(chat_id, movies, page=0):
 # ================================
 
 def send_card(chat_id, movie, local):
-    plot = generate_story(movie["Title"], movie.get("Plot"), movie["Genre"])
-    rating = avg_rating(local)
+    # -------------------------------
+    # BASIC DATA
+    # -------------------------------
+    title = movie.get("Title", "Unknown")
+    year = movie.get("Year", "2025")
+    genre = movie.get("Genre", "Action")
+    genre_clean = " • ".join([g.strip() for g in genre.split(",")])
 
-    extra = ""
-    if local.get("series"):
-        extra += f"\n📀 {local['series']}"
-    if local.get("order"):
-        extra += f"\n🎬 Teil {local['order']}"
+    imdb = movie.get("imdbRating", "7.0")
+    runtime = movie.get("Runtime", "120 Min")
+    director = movie.get("Director", "-")
 
-    caption = f"""🎬 {movie['Title']} ({movie['Year']})
-⭐ {movie['imdbRating']} • 👤 {rating}
-🎥 {movie['Director']}
-{extra}
+    # 🎭 Schauspieler
+    actors = movie.get("Actors", "")
+    actors = ", ".join(actors.split(", ")[:3]) if actors else "-"
 
-📖 {plot}
-▶️ #{local['id']}"""
+    # -------------------------------
+    # KI STORY (BESSER)
+    # -------------------------------
+    plot = generate_story(title, movie.get("Plot"), genre)
 
-    requests.post(f"{URL}/sendPhoto", json={
-        "chat_id": chat_id,
-        "photo": movie["Poster"]
-    })
+    # -------------------------------
+    # RATINGS
+    # -------------------------------
+    def avg_rating(m):
+        if not m.get("ratings"):
+            return 0
+        return round(sum(m["ratings"]) / len(m["ratings"]), 1)
 
+    user_rating = avg_rating(local)
+
+    # -------------------------------
+    # SERIES INFO
+    # -------------------------------
+    series = local.get("series")
+    order = local.get("order")
+
+    series_text = ""
+    if series:
+        series_text += f"\n📀 {series}"
+    if order:
+        series_text += f" • Teil {order}"
+
+    # -------------------------------
+    # TRENDING BADGE
+    # -------------------------------
+    badge = ""
+    if local.get("views", 0) >= 5:
+        badge = "🔥 Trending\n"
+
+    # -------------------------------
+    # FILM ID
+    # -------------------------------
+    movie_id = local.get("id", "0000")
+
+    # -------------------------------
+    # HASHTAGS
+    # -------------------------------
+    tags = " ".join([f"#{g.strip().replace(' ', '')}" for g in genre.split(",")])
+    tags += " #Neu"
+
+    # -------------------------------
+    # FINAL CAPTION (PRO MAX DESIGN)
+    # -------------------------------
+    caption = f"""🎬 {title.upper()} ({year})
+{badge}🔥 4K • {genre_clean}
+━━━━━━━━━━━━━━
+⭐ {imdb} • 👤 {user_rating} • ⏱ {runtime} • 🔞 FSK 16
+🎥 {director}
+🎭 {actors}
+{series_text}
+━━━━━━━━━━━━━━
+📖 STORY
+{plot}
+━━━━━━━━━━━━━━
+▶️ #{movie_id}
+━━━━━━━━━━━━━━
+{tags}
+@LibraryOfLegends"""
+
+    # -------------------------------
+    # POSTER
+    # -------------------------------
+    if movie.get("Poster") and movie["Poster"] != "N/A":
+        requests.post(f"{URL}/sendPhoto", json={
+            "chat_id": chat_id,
+            "photo": movie["Poster"]
+        })
+    else:
+        requests.post(f"{URL}/sendPhoto", json={
+            "chat_id": chat_id,
+            "photo": "https://via.placeholder.com/300x450"
+        })
+
+    # -------------------------------
+    # VIDEO + BUTTONS
+    # -------------------------------
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
         "video": local["file_id"],
         "caption": caption,
         "reply_markup": {
             "inline_keyboard": [
-                [{"text": "⭐1","callback_data":f"rate_{local['id']}_1"},
-                 {"text": "⭐2","callback_data":f"rate_{local['id']}_2"},
-                 {"text": "⭐3","callback_data":f"rate_{local['id']}_3"}],
-                [{"text": "⭐4","callback_data":f"rate_{local['id']}_4"},
-                 {"text": "⭐5","callback_data":f"rate_{local['id']}_5"}]
+                [
+                    {"text": "⭐1", "callback_data": f"rate_{movie_id}_1"},
+                    {"text": "⭐2", "callback_data": f"rate_{movie_id}_2"},
+                    {"text": "⭐3", "callback_data": f"rate_{movie_id}_3"}
+                ],
+                [
+                    {"text": "⭐4", "callback_data": f"rate_{movie_id}_4"},
+                    {"text": "⭐5", "callback_data": f"rate_{movie_id}_5"}
+                ]
             ]
         }
     })
