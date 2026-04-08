@@ -1,12 +1,11 @@
 # ================================
-# 🎬 TELEGRAM BOT (ULTIMATE NETFLIX UI)
+# 🎬 TELEGRAM BOT (ULTIMATE FINAL)
 # ================================
 
 import os
 import json
 import requests
 from flask import Flask, request
-from PIL import Image, ImageDraw, ImageFont
 from openai import OpenAI
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -20,7 +19,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 DATA_FILE = "data.json"
 
 # ================================
-# DATA
+# DATA (CRASH SAFE)
 # ================================
 
 def load_data():
@@ -34,20 +33,20 @@ def load_data():
     if os.path.exists(DATA_FILE):
         try:
             data = json.load(open(DATA_FILE))
-
-            # 🔥 fehlende Keys automatisch ergänzen
             for key in default:
                 if key not in data:
                     data[key] = default[key]
-
             return data
         except:
             return default
 
     return default
 
+def save_data(data):
+    json.dump(data, open(DATA_FILE, "w"))
+
 # ================================
-# KI STORY (GENRE STYLE)
+# KI STORY
 # ================================
 
 def generate_story(title, plot, genre):
@@ -56,20 +55,18 @@ def generate_story(title, plot, genre):
         g = genre.lower()
 
         if "horror" in g:
-            style = "düster und bedrohlich"
+            style = "düster"
         elif "action" in g:
-            style = "intensiv und schnell"
+            style = "intensiv"
         elif "drama" in g:
-            style = "emotional und tief"
-        elif "crime" in g:
-            style = "düster und spannend"
+            style = "emotional"
 
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[{
                 "role": "user",
                 "content": f"""
-Schreibe eine realistische deutsche Netflix-Beschreibung.
+Schreibe eine realistische deutsche Netflix Beschreibung.
 
 Film: {title}
 Genre: {genre}
@@ -96,10 +93,10 @@ Inhalt:
 def get_movie_data(title):
     try:
         url = f"http://www.omdbapi.com/?t={title}&apikey={OMDB_KEY}&plot=full"
-        data = requests.get(url).json()
-        if data.get("Response") == "False":
+        r = requests.get(url).json()
+        if r.get("Response") == "False":
             return None
-        return data
+        return r
     except:
         return None
 
@@ -107,47 +104,18 @@ def get_movie_data(title):
 # SORTIERUNG
 # ================================
 
-def categorize_movie(movie):
-    genres = movie["genre"].split(",")
-
-    for g in genres:
+def categorize_movie(data, movie):
+    for g in movie["genre"].split(","):
         g = g.strip()
         data["categories"].setdefault(g, []).append(movie["title"])
 
     year = int(movie["year"]) if movie["year"].isdigit() else 2025
 
-    if year >= 2020:
-        group = "2020-2025"
-    elif year >= 2010:
-        group = "2010-2019"
-    else:
-        group = "2000-2009"
-
+    group = "2020-2025" if year >= 2020 else "2010-2019"
     data["years"].setdefault(group, []).append(movie["title"])
 
-    series = detect_series(movie["title"])
-    if series:
-        name = series.split(" ", 1)[1]
-        data["series"].setdefault(name, []).append(movie["title"])
-
 # ================================
-# REIHEN
-# ================================
-
-def detect_series(title):
-    t = title.lower()
-
-    if "avengers" in t:
-        return "🔥 Marvel"
-    if "fast" in t:
-        return "🚗 Fast & Furious"
-    if "star wars" in t:
-        return "🌌 Star Wars"
-
-    return ""
-
-# ================================
-# UI
+# BUTTONS
 # ================================
 
 def send_buttons(chat_id, text, buttons):
@@ -157,13 +125,19 @@ def send_buttons(chat_id, text, buttons):
         "reply_markup": {"inline_keyboard": buttons}
     })
 
+# ================================
+# UI
+# ================================
+
 def show_home(chat_id):
+    data = load_data()
+
     buttons = [
         [{"text": "🎬 Genres", "callback_data": "genres"}],
-        [{"text": "📅 Jahre", "callback_data": "years"}],
-        [{"text": "🎞 Reihen", "callback_data": "series"}]
+        [{"text": "📅 Jahre", "callback_data": "years"}]
     ]
-    send_buttons(chat_id, "🎬 Library UI", buttons)
+
+    send_buttons(chat_id, "🎬 Library of Legends", buttons)
 
 # ================================
 # LISTEN
@@ -171,43 +145,44 @@ def show_home(chat_id):
 
 def show_movies(chat_id, movies):
     buttons = []
+
     for m in movies[:10]:
         buttons.append([{"text": m, "callback_data": f"movie_{m}"}])
 
-    buttons.append([{"text": "🔙", "callback_data": "home"}])
+    buttons.append([{"text": "🔙 Menü", "callback_data": "home"}])
 
-    send_buttons(chat_id, "🎬 Filme:", buttons)
+    send_buttons(chat_id, "🎬 Wähle Film:", buttons)
 
 # ================================
 # FILM CARD
 # ================================
 
 def show_movie_card(chat_id, title):
-    movie_local = next((m for m in data["movies"] if m["title"] == title), None)
+    data = load_data()
 
+    movie_local = next((m for m in data["movies"] if m["title"] == title), None)
     if not movie_local:
         return
 
     movie = get_movie_data(title)
-
-    if movie:
-        genre = movie.get("Genre", "")
-        plot = generate_story(title, movie.get("Plot", ""), genre)
-        actors = movie.get("Actors", "")
-        rating = movie.get("imdbRating", "")
-        runtime = movie.get("Runtime", "")
-        director = movie.get("Director", "")
-        poster = movie.get("Poster")
-        year = movie.get("Year")
-    else:
+    if not movie:
         return
+
+    genre = movie.get("Genre", "")
+    plot = generate_story(title, movie.get("Plot", ""), genre)
+    actors = movie.get("Actors", "")
+    rating = movie.get("imdbRating", "")
+    runtime = movie.get("Runtime", "")
+    director = movie.get("Director", "")
+    poster = movie.get("Poster")
+    year = movie.get("Year")
 
     caption = f"""🎬 {title.upper()} ({year})
 🔥 {genre}
 ━━━━━━━━━━━━━━
 ⭐ {rating} • ⏱ {runtime}
 🎥 {director}
-🎭 {actors.split(",")[0:2]}
+🎭 {", ".join(actors.split(", ")[:3])}
 ━━━━━━━━━━━━━━
 📖 {plot}
 ━━━━━━━━━━━━━━"""
@@ -229,13 +204,12 @@ def show_movie_card(chat_id, title):
 # ================================
 
 def handle_video(chat_id, message):
+    data = load_data()
+
     video = message.get("video") or message.get("document")
     title = message.get("caption", "Unknown")
 
-    file_id = video["file_id"]
-
     movie = get_movie_data(title)
-
     if not movie:
         return
 
@@ -246,12 +220,12 @@ def handle_video(chat_id, message):
     data["movies"].append({
         "id": len(data["movies"]) + 1,
         "title": title,
-        "file_id": file_id,
+        "file_id": video["file_id"],
         "genre": genre,
         "year": year
     })
 
-    categorize_movie({
+    categorize_movie(data, {
         "title": title,
         "genre": genre,
         "year": year
@@ -261,7 +235,7 @@ def handle_video(chat_id, message):
 
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": CHANNEL,
-        "video": file_id,
+        "video": video["file_id"],
         "caption": f"🎬 {title}"
     })
 
@@ -276,13 +250,17 @@ def webhook():
     update = request.get_json()
 
     if "callback_query" in update:
-        data_cb = update["callback_query"]["data"]
         chat_id = update["callback_query"]["message"]["chat"]["id"]
+        data_cb = update["callback_query"]["data"]
+
+        data = load_data()
 
         if data_cb == "home":
             show_home(chat_id)
+
         elif data_cb == "genres":
             show_movies(chat_id, list(data["categories"].keys()))
+
         elif data_cb.startswith("movie_"):
             show_movie_card(chat_id, data_cb.replace("movie_", ""))
 
@@ -306,6 +284,10 @@ def webhook():
 @app.route("/")
 def home():
     return "Bot läuft"
+
+# ================================
+# START
+# ================================
 
 if __name__ == "__main__":
     webhook_url = os.getenv("WEBHOOK_URL")
