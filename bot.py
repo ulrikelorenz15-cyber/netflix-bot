@@ -24,14 +24,27 @@ DATA_FILE = "data.json"
 # ================================
 
 def load_data():
+    default = {
+        "movies": [],
+        "categories": {},
+        "years": {},
+        "series": {}
+    }
+
     if os.path.exists(DATA_FILE):
-        return json.load(open(DATA_FILE))
-    return {"movies": [], "categories": {}, "years": {}, "series": {}}
+        try:
+            data = json.load(open(DATA_FILE))
 
-def save_data(data):
-    json.dump(data, open(DATA_FILE, "w"))
+            # 🔥 fehlende Keys automatisch ergänzen
+            for key in default:
+                if key not in data:
+                    data[key] = default[key]
 
-data = load_data()
+            return data
+        except:
+            return default
+
+    return default
 
 # ================================
 # KI STORY (GENRE STYLE)
