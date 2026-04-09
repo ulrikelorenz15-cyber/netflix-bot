@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (MASTER ALL-IN)
+# 🎬 NETFLIX BOT FINAL (MASTER ALL-IN GOD MODE)
 # ================================
 
 import os
@@ -46,7 +46,59 @@ def clean_title(raw):
     return " ".join(cleaned)
 
 # ================================
-# 🎞 AUTO SERIES + MARVEL
+# 🧠 AI DETECT GOD MODE
+# ================================
+
+def ai_detect_title(raw_text):
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{
+                "role": "user",
+                "content": f"""
+Errate den Film Titel:
+
+{raw_text}
+
+Nur Titel zurückgeben.
+"""
+            }],
+            temperature=0.3
+        )
+        return res.choices[0].message.content.strip()
+    except Exception as e:
+        log_error(e)
+        return None
+
+def try_multiple_titles(title):
+    variants = [
+        title,
+        title.split("(")[0],
+        title.split("-")[0],
+        " ".join(title.split(" ")[:2])
+    ]
+
+    for t in variants:
+        movie = get_movie(t.strip())
+        if movie:
+            return movie
+
+    return None
+
+def extract_title_advanced(msg):
+    if msg.get("caption"):
+        return clean_title(msg.get("caption"))
+
+    if msg.get("document") and msg["document"].get("file_name"):
+        return clean_title(msg["document"]["file_name"])
+
+    if "forward_origin" in msg:
+        return str(msg["forward_origin"])
+
+    return ""
+
+# ================================
+# 🎞 SERIES
 # ================================
 
 SERIES_DB = {
@@ -88,6 +140,9 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
+def get_next_id(data):
+    return str(len(data["movies"]) + 1).zfill(4)
+
 # ================================
 # OMDb CACHE
 # ================================
@@ -125,8 +180,16 @@ def generate_story(title, plot, genre):
             model="gpt-4.1-mini",
             messages=[{
                 "role":"user",
-                "content":f"{title} {plot} (4-5 Sätze, konkret, düster, Netflix Stil)"
-            }]
+                "content":f"""
+Film: {title}
+Genre: {genre}
+Inhalt:
+{plot}
+
+4-5 Sätze, konkret, düster, Netflix Stil
+"""
+            }],
+            temperature=1.1
         )
 
         text = res.choices[0].message.content.strip()
@@ -149,7 +212,7 @@ def avg_rating(m):
     return round(sum(m["ratings"]) / len(m["ratings"]), 1)
 
 # ================================
-# GRID UI
+# GRID
 # ================================
 
 def show_grid(chat_id, movies):
@@ -172,7 +235,7 @@ def show_grid(chat_id, movies):
         })
 
 # ================================
-# 🎬 FILM CARD (FULL)
+# 🎬 FILM CARD
 # ================================
 
 def send_card(chat_id, movie, local):
@@ -185,7 +248,6 @@ def send_card(chat_id, movie, local):
 
     plot = generate_story(title, movie.get("Plot"), movie.get("Genre"))
 
-    # SERIES INFO
     series_text = ""
     if local.get("series"):
         series_text += f"\n📀 {local['series']}"
@@ -206,20 +268,6 @@ def send_card(chat_id, movie, local):
 #{genres[0]} #{genres[1] if len(genres)>1 else genres[0]} #Neu
 @LibraryOfLegends"""
 
-    buttons = []
-
-    if local.get("series"):
-        buttons.append([{
-            "text": f"🎞 {local['series']} ansehen",
-            "callback_data": f"series_{local['series']}"
-        }])
-
-    buttons.append([
-        {"text":"⭐1","callback_data":f"rate_{local['id']}_1"},
-        {"text":"⭐2","callback_data":f"rate_{local['id']}_2"},
-        {"text":"⭐3","callback_data":f"rate_{local['id']}_3"}
-    ])
-
     safe_post("sendPhoto", {
         "chat_id": chat_id,
         "photo": movie.get("Poster")
@@ -228,30 +276,39 @@ def send_card(chat_id, movie, local):
     safe_post("sendVideo", {
         "chat_id": chat_id,
         "video": local["file_id"],
-        "caption": caption,
-        "reply_markup":{"inline_keyboard":buttons}
+        "caption": caption
     })
 
 # ================================
-# VIDEO
+# VIDEO (GOD MODE)
 # ================================
 
 def handle_video(msg):
     data = load_data()
-
     video = msg.get("video") or msg.get("document")
 
-    title_raw = msg.get("caption") or msg.get("document", {}).get("file_name","")
-    title = clean_title(title_raw)
+    raw = extract_title_advanced(msg)
+    movie = None
 
-    movie = get_movie(title)
+    if raw:
+        movie = try_multiple_titles(raw)
+
+    if not movie and raw:
+        ai_title = ai_detect_title(raw)
+        if ai_title:
+            movie = try_multiple_titles(ai_title)
+
     if not movie:
+        safe_post("sendMessage", {
+            "chat_id": msg["chat"]["id"],
+            "text": f"❌ Film nicht erkannt\n\nInput: {raw or 'leer'}"
+        })
         return
 
     meta = detect_series(movie["Title"])
 
     entry = {
-        "id": str(len(data["movies"])+1).zfill(4),
+        "id": get_next_id(data),
         "title": movie["Title"],
         "file_id": video["file_id"],
         "views": 0,
@@ -261,6 +318,11 @@ def handle_video(msg):
 
     data["movies"].append(entry)
     save_data(data)
+
+    safe_post("sendMessage", {
+        "chat_id": msg["chat"]["id"],
+        "text": f"🧠 Erkannt: {movie['Title']}"
+    })
 
     send_card(msg["chat"]["id"], movie, entry)
     send_card(CHANNEL, movie, entry)
@@ -284,30 +346,15 @@ def webhook():
             title = cb.replace("movie_","")
             m = next((x for x in data["movies"] if x["title"] == title), None)
 
-            if not m:
-                return "ok"
-
-            movie = get_movie(title)
-            if not movie:
-                return "ok"
-
-            m["views"] += 1
-            save_data(data)
-
-            send_card(chat_id, movie, m)
+            if m:
+                movie = get_movie(title)
+                m["views"] += 1
+                save_data(data)
+                send_card(chat_id, movie, m)
 
         elif cb.startswith("series_"):
             name = cb.replace("series_","")
             show_grid(chat_id, get_series_list(data, name))
-
-        elif cb.startswith("rate_"):
-            _, mid, val = cb.split("_")
-
-            for m in data["movies"]:
-                if m["id"] == mid:
-                    m["ratings"].append(int(val))
-
-            save_data(data)
 
     msg = update.get("message")
 
