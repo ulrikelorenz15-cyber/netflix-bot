@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTIMATE SERIES BUILD)
+# 🎬 NETFLIX BOT FINAL (MASTER ALL-IN)
 # ================================
 
 import os
@@ -16,8 +16,8 @@ OMDB_KEY = "a3776f86"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DATA_FILE = "data.json"
-SESSION = {}
 CACHE = {}
+SESSION = {}
 
 # ================================
 # UTILS
@@ -25,6 +25,12 @@ CACHE = {}
 
 def log_error(e):
     print("ERROR:", str(e))
+
+def safe_post(method, payload):
+    try:
+        requests.post(f"{URL}/{method}", json=payload, timeout=5)
+    except Exception as e:
+        log_error(e)
 
 def clean_title(raw):
     if not raw:
@@ -40,51 +46,30 @@ def clean_title(raw):
     return " ".join(cleaned)
 
 # ================================
-# 🎞 AUTO SERIES SYSTEM
+# 🎞 AUTO SERIES + MARVEL
 # ================================
 
 SERIES_DB = {
-    "Bourne": [
-        "Identität",
-        "Verschwörung",
-        "Ultimatum",
-        "Vermächtnis",
-        "Jason Bourne"
-    ],
-    "Jurassic Park": [
-        "Jurassic Park",
-        "Vergessene Welt",
-        "Jurassic Park 3",
-        "Jurassic World",
-        "gefallene Königreich",
-        "neues Zeitalter"
-    ]
+    "Bourne": ["bourne"],
+    "Jurassic Park": ["jurassic"]
 }
 
-MARVEL_PHASES = {
-    "Phase 1": ["Iron Man","Hulk","Thor","Captain America","Avengers"],
-    "Phase 2": ["Iron Man 3","Thor 2","Captain America 2","Guardians","Avengers 2"],
-    "Phase 3": ["Civil War","Doctor Strange","Black Panther","Infinity War","Endgame"]
-}
+MARVEL = ["avengers","iron man","thor","captain america","guardians"]
 
 def detect_series(title):
     t = title.lower()
 
-    for name, movies in SERIES_DB.items():
-        for i, m in enumerate(movies):
-            if m.lower() in t:
-                return {"series": name, "order": i+1, "phase": None}
+    for name, keys in SERIES_DB.items():
+        if any(k in t for k in keys):
+            return {"series": name, "order": 0, "phase": None}
 
-    for phase, movies in MARVEL_PHASES.items():
-        for i, m in enumerate(movies):
-            if m.lower() in t:
-                return {"series": "Marvel", "order": i+1, "phase": phase}
+    if any(m in t for m in MARVEL):
+        return {"series": "Marvel", "order": 0, "phase": "MCU"}
 
     return {"series": None, "order": 0, "phase": None}
 
 def get_series_list(data, name):
-    items = [m for m in data["movies"] if m.get("series") == name]
-    return sorted(items, key=lambda x: x.get("order", 0))
+    return [m for m in data["movies"] if m.get("series") == name]
 
 # ================================
 # DATA
@@ -93,13 +78,15 @@ def get_series_list(data, name):
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
-            return json.load(open(DATA_FILE))
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
         except:
             return {"movies": []}
     return {"movies": []}
 
 def save_data(data):
-    json.dump(data, open(DATA_FILE, "w"))
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
 
 # ================================
 # OMDb CACHE
@@ -136,31 +123,21 @@ def generate_story(title, plot, genre):
 
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[{"role":"user","content":f"""
-Film: {title}
-Genre: {genre}
-Inhalt:
-{plot}
-
-4-5 Sätze, konkret, düster, Netflix Stil
-"""}],
-            temperature=1.1
+            messages=[{
+                "role":"user",
+                "content":f"{title} {plot} (4-5 Sätze, konkret, düster, Netflix Stil)"
+            }]
         )
 
         text = res.choices[0].message.content.strip()
 
-        if len(text) < 120:
+        if len(text) < 100:
             raise Exception()
 
         return text
 
     except:
-        return (
-            f"{title} beginnt mit einer scheinbar kontrollierten Situation, die eskaliert. "
-            f"Ein Charakter gerät in ein brutales Umfeld voller Druck und Gewalt. "
-            f"Mit jeder Entscheidung verschärft sich die Lage weiter. "
-            f"Am Ende steht mehr auf dem Spiel als nur ein persönliches Schicksal."
-        )
+        return f"{title} entwickelt sich zu einer intensiven Geschichte voller Konflikte und Konsequenzen."
 
 # ================================
 # RATING
@@ -172,20 +149,7 @@ def avg_rating(m):
     return round(sum(m["ratings"]) / len(m["ratings"]), 1)
 
 # ================================
-# RANKINGS
-# ================================
-
-def get_rankings(data):
-    m = data["movies"]
-
-    return {
-        "🔥 Trending": sorted(m, key=lambda x: x.get("views",0), reverse=True)[:10],
-        "🏆 Top": sorted(m, key=lambda x: avg_rating(x), reverse=True)[:10],
-        "🆕 Neu": list(reversed(m))[:10]
-    }
-
-# ================================
-# GRID
+# GRID UI
 # ================================
 
 def show_grid(chat_id, movies):
@@ -196,57 +160,52 @@ def show_grid(chat_id, movies):
         if not movie:
             continue
 
-        requests.post(f"{URL}/sendPhoto", json={
+        safe_post("sendPhoto", {
             "chat_id": chat_id,
-            "photo": movie.get("Poster") or "https://via.placeholder.com/300x450",
+            "photo": movie.get("Poster"),
             "caption": f"🎬 {movie['Title']} • ⭐ {movie['imdbRating']}",
-            "reply_markup": {
+            "reply_markup":{
                 "inline_keyboard":[[
                     {"text":"▶️ Öffnen","callback_data":f"movie_{movie['Title']}"}
                 ]]
             }
-        }, timeout=5)
+        })
 
 # ================================
-# FILM CARD
+# 🎬 FILM CARD (FULL)
 # ================================
 
 def send_card(chat_id, movie, local):
-    title = movie["Title"]
-    year = movie["Year"]
+    title = movie.get("Title")
+    year = movie.get("Year")
 
     genres = [g.strip() for g in movie.get("Genre","").split(",") if g.strip()]
     if not genres:
         genres = ["Unknown"]
 
-    main = " • ".join(genres[:2])
-
     plot = generate_story(title, movie.get("Plot"), movie.get("Genre"))
 
-    # SERIES TEXT
+    # SERIES INFO
     series_text = ""
     if local.get("series"):
         series_text += f"\n📀 {local['series']}"
-    if local.get("order"):
-        series_text += f" • Teil {local['order']}"
     if local.get("phase"):
         series_text += f" • {local['phase']}"
 
     caption = f"""🎬 {title.upper()} ({year})
-🔥 4K • {main}
+🔥 4K • {' • '.join(genres[:2])}
 ━━━━━━━━━━━━━━
-⭐ {movie.get("imdbRating")} • ⏱ {movie.get("Runtime")} • 🔞 FSK 16
+⭐ {movie.get("imdbRating")} • 👤 {avg_rating(local)} • ⏱ {movie.get("Runtime")}
 🎥 {movie.get("Director")}{series_text}
 ━━━━━━━━━━━━━━
 📖 STORY
 {plot}
 ━━━━━━━━━━━━━━
-▶️ #{local["id"]}
+▶️ #{local.get("id")}
 ━━━━━━━━━━━━━━
 #{genres[0]} #{genres[1] if len(genres)>1 else genres[0]} #Neu
 @LibraryOfLegends"""
 
-    # BUTTONS
     buttons = []
 
     if local.get("series"):
@@ -261,18 +220,17 @@ def send_card(chat_id, movie, local):
         {"text":"⭐3","callback_data":f"rate_{local['id']}_3"}
     ])
 
-    # SEND
-    requests.post(f"{URL}/sendPhoto", json={
+    safe_post("sendPhoto", {
         "chat_id": chat_id,
-        "photo": movie.get("Poster") or "https://via.placeholder.com/300x450"
-    }, timeout=5)
+        "photo": movie.get("Poster")
+    })
 
-    requests.post(f"{URL}/sendVideo", json={
+    safe_post("sendVideo", {
         "chat_id": chat_id,
         "video": local["file_id"],
         "caption": caption,
-        "reply_markup": {"inline_keyboard": buttons}
-    }, timeout=5)
+        "reply_markup":{"inline_keyboard":buttons}
+    })
 
 # ================================
 # VIDEO
@@ -282,7 +240,9 @@ def handle_video(msg):
     data = load_data()
 
     video = msg.get("video") or msg.get("document")
-    title = clean_title(msg.get("caption") or msg.get("document", {}).get("file_name",""))
+
+    title_raw = msg.get("caption") or msg.get("document", {}).get("file_name","")
+    title = clean_title(title_raw)
 
     movie = get_movie(title)
     if not movie:
@@ -323,13 +283,17 @@ def webhook():
         if cb.startswith("movie_"):
             title = cb.replace("movie_","")
             m = next((x for x in data["movies"] if x["title"] == title), None)
-            if not m: return "ok"
+
+            if not m:
+                return "ok"
 
             movie = get_movie(title)
-            if not movie: return "ok"
+            if not movie:
+                return "ok"
 
             m["views"] += 1
             save_data(data)
+
             send_card(chat_id, movie, m)
 
         elif cb.startswith("series_"):
@@ -338,9 +302,11 @@ def webhook():
 
         elif cb.startswith("rate_"):
             _, mid, val = cb.split("_")
+
             for m in data["movies"]:
                 if m["id"] == mid:
                     m["ratings"].append(int(val))
+
             save_data(data)
 
     msg = update.get("message")
@@ -353,25 +319,23 @@ def webhook():
 
     return "ok"
 
-@app.route("/")
-def home():
-    return "Bot läuft 🚀"
-
 # ================================
-# START
+# HOME
 # ================================
 
 def show_home(chat_id):
     data = load_data()
-    rankings = get_rankings(data)
 
-    for name, movies in rankings.items():
-        requests.post(f"{URL}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": name
-        }, timeout=5)
+    safe_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": "🎬 Library of Legends\n🔥 Netflix Style UI"
+    })
 
-        show_grid(chat_id, movies)
+    show_grid(chat_id, data["movies"])
+
+# ================================
+# START
+# ================================
 
 if __name__ == "__main__":
     requests.get(f"{URL}/setWebhook?url={os.getenv('WEBHOOK_URL')}/webhook/{TOKEN}")
