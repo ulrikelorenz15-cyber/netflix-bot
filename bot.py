@@ -231,13 +231,46 @@ def show_grid(chat_id, movies):
 # ================================
 
 def send_card(chat_id, movie, local):
-    caption = f"{movie['Title']} ({movie['Year']})\n⭐ {movie['imdbRating']}"
+    title = movie.get("Title", "Unknown")
+    year = movie.get("Year", "")
     
+    genres = [g.strip() for g in movie.get("Genre", "").split(",") if g.strip()]
+    if not genres:
+        genres = ["Unknown"]
+
+    main_genres = " • ".join(genres[:2])
+
+    imdb = movie.get("imdbRating", "0")
+    runtime = movie.get("Runtime", "-")
+    director = movie.get("Director", "-")
+
+    # STORY (dein Stil bleibt)
+    plot = generate_story(title, movie.get("Plot"), movie.get("Genre"))
+
+    # HASHTAGS
+    tags = " ".join([f"#{g.replace(' ', '')}" for g in genres[:2]]) + " #Neu"
+
+    caption = f"""🎬 {title.upper()} ({year})
+🔥 4K • {main_genres}
+━━━━━━━━━━━━━━
+⭐ {imdb} • ⏱ {runtime} • 🔞 FSK 16
+🎥 {director}
+━━━━━━━━━━━━━━
+📖 STORY
+{plot}
+━━━━━━━━━━━━━━
+▶️ #{local.get("id")}
+━━━━━━━━━━━━━━
+{tags}
+@LibraryOfLegends"""
+
+    # Poster
     safe_post("sendPhoto", {
         "chat_id": chat_id,
-        "photo": movie.get("Poster")
+        "photo": movie.get("Poster") or "https://via.placeholder.com/300x450"
     })
 
+    # Video + Caption
     safe_post("sendVideo", {
         "chat_id": chat_id,
         "video": local["file_id"],
