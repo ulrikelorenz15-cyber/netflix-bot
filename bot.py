@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (HYBRID STORY MODE)
+# 🎬 NETFLIX BOT FINAL (ULTIMATE)
 # ================================
 
 import os
@@ -51,13 +51,13 @@ def get_movie(title):
         return None
 
 # ================================
-# 🧠 HYBRID STORY MODE
+# 🧠 STORY
 # ================================
 
 def generate_story(title, plot, genre):
     try:
         if not plot or plot == "N/A":
-            raise Exception("kein plot")
+            raise Exception()
 
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -65,87 +65,130 @@ def generate_story(title, plot, genre):
                 "role": "user",
                 "content": f"""
 Schreibe eine deutsche Filmbeschreibung.
-
-Film: {title}
-Genre: {genre}
-
-Inhalt:
-{plot}
-
-REGELN:
-- 2 bis 3 Sätze
-- konkret & direkt
+- 3–5 Sätze
+- konkret & realistisch
 - keine Floskeln
-- Netflix Stil
 """
-            }],
-            temperature=1.0
+            }]
         )
 
         text = res.choices[0].message.content.strip()
 
-        if len(text) < 80:
-            raise Exception("zu kurz")
-
-        if any(w in text.lower() for w in ["the ", "after ", "when "]):
-            raise Exception("englisch")
+        if len(text) < 100:
+            raise Exception()
 
         return text
 
     except:
         return (
             f"{title} beginnt mit einer Situation, die schnell außer Kontrolle gerät. "
-            f"Ein erfahrener Protagonist gerät in ein brutales Umfeld aus Gewalt und Druck, "
-            f"in dem jede Entscheidung Konsequenzen hat. Während sich die Ereignisse zuspitzen, "
-            f"gerät er zunehmend ins Visier mächtiger Gegner."
+            f"Ein zentraler Charakter gerät in ein brutales Umfeld aus Druck und Gewalt, "
+            f"in dem jede Entscheidung weitreichende Konsequenzen hat. "
+            f"Während sich die Lage zuspitzt, wird klar, dass größere Kräfte im Hintergrund wirken."
         )
 
 # ================================
-# COLLECTIONS
+# ⭐ USER RATING (READY)
 # ================================
 
-def build_collections(data):
+def avg_rating(m):
+    if not m.get("ratings"):
+        return 0
+    return round(sum(m["ratings"]) / len(m["ratings"]), 1)
+
+# ================================
+# 📊 SCORE SYSTEM
+# ================================
+
+def get_score(m):
+    try:
+        movie = get_movie(m["title"])
+        imdb = float(movie.get("imdbRating", 0))
+    except:
+        imdb = 0
+
+    user = avg_rating(m)
+    views = m.get("views", 0)
+
+    return imdb * 1.5 + user * 2 + views * 0.3
+
+# ================================
+# 📊 RANKINGS
+# ================================
+
+def get_rankings(data):
+    movies = data["movies"]
+
     return {
-        "🔥 Trending": sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True),
-        "🆕 Neu": list(reversed(data["movies"]))
+        "🔥 Trending": sorted(movies, key=lambda x: x.get("views", 0), reverse=True)[:10],
+        "🏆 Top": sorted(movies, key=get_score, reverse=True)[:10],
+        "🆕 Neu": list(reversed(movies))[:10]
     }
 
 # ================================
-# ⭐ EMPFEHLUNGSSYSTEM
+# 🎞 AUTO COLLECTIONS
 # ================================
 
-def get_recommendations(data, base_movie):
-    base = get_movie(base_movie["title"])
-    if not base:
-        return []
-
-    base_genre = base.get("Genre", "").lower()
-    scored = []
+def build_auto_collections(data):
+    collections = {
+        "🔥 Beste Action": [],
+        "🧠 Thriller": [],
+        "😂 Comedy": [],
+        "🚀 Sci-Fi": [],
+        "👑 Top Filme": []
+    }
 
     for m in data["movies"]:
-        if m["title"] == base_movie["title"]:
-            continue
-
         movie = get_movie(m["title"])
         if not movie:
             continue
 
-        score = 0
+        genre = movie.get("Genre", "").lower()
 
-        if any(g.strip().lower() in base_genre for g in movie.get("Genre", "").split(",")):
-            score += 2
+        if "action" in genre:
+            collections["🔥 Beste Action"].append(m)
+
+        if "thriller" in genre or "crime" in genre:
+            collections["🧠 Thriller"].append(m)
+
+        if "comedy" in genre:
+            collections["😂 Comedy"].append(m)
+
+        if "sci-fi" in genre:
+            collections["🚀 Sci-Fi"].append(m)
 
         try:
-            score += float(movie.get("imdbRating", 0)) / 5
+            if float(movie.get("imdbRating", 0)) >= 7.5:
+                collections["👑 Top Filme"].append(m)
         except:
             pass
 
-        score += m.get("views", 0) * 0.2
+    return collections
 
-        scored.append((score, m))
+# ================================
+# 🌍 TRENDING VERGLEICH
+# ================================
 
-    scored.sort(reverse=True, key=lambda x: x[0])
-    return [m for _, m in scored[:5]]
+def get_channel_trending(data):
+    return sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True)[:10]
+
+def get_global_trending(data):
+    scored = []
+
+    for m in data["movies"]:
+        movie = get_movie(m["title"])
+        if not movie:
+            continue
+
+        try:
+            imdb = float(movie.get("imdbRating", 0))
+        except:
+            imdb = 0
+
+        scored.append((imdb * 2, m))
+
+    scored.sort(reverse=True)
+    return [m for _, m in scored[:10]]
 
 # ================================
 # GRID
@@ -155,10 +198,7 @@ def show_grid(chat_id, movies, page=0):
     SESSION[chat_id] = movies
 
     per_page = 3
-    start = page * per_page
-    end = start + per_page
-
-    subset = movies[start:end]
+    subset = movies[page*per_page:(page+1)*per_page]
 
     for m in subset:
         movie = get_movie(m["title"])
@@ -167,28 +207,13 @@ def show_grid(chat_id, movies, page=0):
 
         requests.post(f"{URL}/sendPhoto", json={
             "chat_id": chat_id,
-            "photo": movie["Poster"] if movie["Poster"] != "N/A" else "https://via.placeholder.com/300x450",
+            "photo": movie["Poster"],
             "caption": f"🎬 {movie['Title']} • ⭐ {movie['imdbRating']}",
             "reply_markup": {
                 "inline_keyboard": [[
                     {"text": "▶️ Öffnen", "callback_data": f"movie_{movie['Title']}"}
                 ]]
             }
-        })
-
-    nav = []
-
-    if page > 0:
-        nav.append({"text": "⬅️", "callback_data": f"grid_{page-1}"})
-
-    if end < len(movies):
-        nav.append({"text": "➡️", "callback_data": f"grid_{page+1}"})
-
-    if nav:
-        requests.post(f"{URL}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": "Navigation",
-            "reply_markup": {"inline_keyboard": [nav]}
         })
 
 # ================================
@@ -209,10 +234,21 @@ def send_card(chat_id, movie, local):
 
     plot = generate_story(title, movie.get("Plot"), genre)
 
+    # 🔥 BADGES
+    badge = ""
+    if local.get("views", 0) >= 5:
+        badge += "🔥 Trending\n"
+
+    try:
+        if float(imdb) >= 8:
+            badge += "🌍 Global Top\n"
+    except:
+        pass
+
     tags = f"#{genres[0]} #{genres[1] if len(genres)>1 else genres[0]} #Neu"
 
     caption = f"""🎬 {title.upper()} ({year})
-🔥 4K • {main_genres}
+{badge}🔥 4K • {main_genres}
 ━━━━━━━━━━━━━━
 ⭐ {imdb} • ⏱ {runtime} • 🔞 FSK 16
 🎥 {director}
@@ -225,44 +261,16 @@ def send_card(chat_id, movie, local):
 {tags}
 @LibraryOfLegends"""
 
-    # Poster
     requests.post(f"{URL}/sendPhoto", json={
         "chat_id": chat_id,
-        "photo": movie["Poster"] if movie.get("Poster") != "N/A" else "https://via.placeholder.com/300x450"
+        "photo": movie["Poster"]
     })
 
-    # Video
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": chat_id,
         "video": local["file_id"],
         "caption": caption
     })
-
-    # ⭐ Empfehlungen
-    data = load_data()
-    recs = get_recommendations(data, local)
-
-    if recs:
-        requests.post(f"{URL}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": "🎯 Das könnte dir auch gefallen:"
-        })
-
-        for r in recs[:3]:
-            movie_r = get_movie(r["title"])
-            if not movie_r:
-                continue
-
-            requests.post(f"{URL}/sendPhoto", json={
-                "chat_id": chat_id,
-                "photo": movie_r["Poster"],
-                "caption": movie_r["Title"],
-                "reply_markup": {
-                    "inline_keyboard": [[
-                        {"text": "▶️ Öffnen", "callback_data": f"movie_{movie_r['Title']}"}
-                    ]]
-                }
-            })
 
 # ================================
 # HOME
@@ -270,21 +278,25 @@ def send_card(chat_id, movie, local):
 
 def show_home(chat_id):
     data = load_data()
-    collections = build_collections(data)
 
     requests.post(f"{URL}/sendMessage", json={
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n\n🔥 Entdecke Filme wie auf Netflix"
+        "text": "🎬 Library of Legends\n\n🔥 Netflix UI Simulation"
     })
 
+    rankings = get_rankings(data)
+
     requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": "🔥 Trending"})
-    show_grid(chat_id, collections["🔥 Trending"], 0)
+    show_grid(chat_id, rankings["🔥 Trending"])
+
+    requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": "🏆 Top"})
+    show_grid(chat_id, rankings["🏆 Top"])
 
     requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": "🆕 Neu"})
-    show_grid(chat_id, collections["🆕 Neu"], 0)
+    show_grid(chat_id, rankings["🆕 Neu"])
 
 # ================================
-# VIDEO UPLOAD
+# VIDEO (FORWARD READY)
 # ================================
 
 def handle_video(msg):
@@ -301,7 +313,8 @@ def handle_video(msg):
         "id": get_next_id(data),
         "title": movie["Title"],
         "file_id": video["file_id"],
-        "views": 0
+        "views": 0,
+        "ratings": []
     }
 
     data["movies"].append(entry)
@@ -328,14 +341,12 @@ def webhook():
         if cb.startswith("movie_"):
             title = cb.replace("movie_", "")
             m = next(x for x in data["movies"] if x["title"] == title)
+
             movie = get_movie(title)
             m["views"] += 1
             save_data(data)
-            send_card(chat_id, movie, m)
 
-        elif cb.startswith("grid_"):
-            page = int(cb.split("_")[1])
-            show_grid(chat_id, SESSION.get(chat_id, []), page)
+            send_card(chat_id, movie, m)
 
     msg = update.get("message")
 
