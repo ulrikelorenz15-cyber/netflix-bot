@@ -260,7 +260,7 @@ def handle_video(msg):
     data = load_data()
 
     video = msg.get("video") or msg.get("document")
-    title = msg.get("caption")
+    title = msg.get("caption") or msg.get("document", {}).get("file_name", "")
 
     movie = get_movie(title)
     if not movie:
