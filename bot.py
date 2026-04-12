@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTIMATE OFFLINE NETFLIX SYSTEM + AI UPGRADE)
+# 🎬 NETFLIX BOT FINAL (ULTIMATE OFFLINE NETFLIX SYSTEM + FULL UPGRADE)
 # ================================
 
 import os
@@ -42,6 +42,40 @@ def clean_title(raw):
     return " ".join([w for w in raw.split() if w.lower() not in blacklist])
 
 # ================================
+# 👤 PROFILE SYSTEM
+# ================================
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        return json.load(open(USERS_FILE))
+    return {}
+
+def save_users(users):
+    json.dump(users, open(USERS_FILE, "w"))
+
+def get_user(uid):
+    users = load_users()
+
+    if str(uid) not in users:
+        users[str(uid)] = {
+            "profiles": {
+                "default": {
+                    "watching": [],
+                    "history": [],
+                    "favorites": []
+                }
+            },
+            "active": "default"
+        }
+        save_users(users)
+
+    return users[str(uid)]
+
+def get_profile(uid):
+    user = get_user(uid)
+    return user["profiles"][user["active"]]
+
+# ================================
 # 🧠 AI GENRE
 # ================================
 
@@ -52,8 +86,7 @@ def ai_detect_genre(title):
             messages=[{
                 "role": "user",
                 "content": f"Genres für Film: {title}. Nur 2 Genres."
-            }],
-            temperature=0.3
+            }]
         )
         return [g.strip() for g in res.choices[0].message.content.split(",")]
     except:
@@ -81,7 +114,7 @@ def detect_marvel_phase(title):
     return None
 
 # ================================
-# 🧠 AUTO DB BUILDER (FIXED)
+# 🧠 AUTO DB BUILDER
 # ================================
 
 def extract_movie_data(text):
@@ -90,7 +123,6 @@ def extract_movie_data(text):
 
     text = text.replace("\n", " ")
 
-    # TITLE + YEAR
     title = "Unknown"
     year = ""
 
@@ -98,27 +130,16 @@ def extract_movie_data(text):
     if m:
         title = m.group(1).strip()
         year = m.group(2) or ""
-    else:
-        title = text.split(" ")[0]
 
-    # GENRE
     genres = re.findall(r"#(\w+)", text)
-
-    if not genres:
-        g = re.search(r"🔥.*?•(.*?)━", text)
-        if g:
-            genres = [x.strip() for x in g.group(1).split("•")]
-
     if not genres:
         genres = ai_detect_genre(title)
 
-    # RUNTIME
     runtime = "-"
     rt = re.search(r"⏱\s*([0-9]+ ?min)", text.lower())
     if rt:
         runtime = rt.group(1)
 
-    # DIRECTOR
     director = "-"
     dr = re.search(r"🎥\s*([^#]+)", text)
     if dr:
@@ -139,22 +160,16 @@ def save_movie_from_post(msg):
     caption = msg.get("caption") or ""
 
     info = extract_movie_data(caption)
-    if not info or not info["title"]:
+    if not info:
         return None
 
-    # DUPLICATE CHECK
     for m in data["movies"]:
         if m["title"].lower() == info["title"].lower():
             return m
 
     entry = {
         "id": get_next_id(data),
-        "title": info["title"],
-        "year": info["year"],
-        "genre": info["genre"],
-        "runtime": info["runtime"],
-        "director": info["director"],
-        "rating": info["rating"],
+        **info,
         "file_id": video["file_id"],
         "views": 0,
         "phase": detect_marvel_phase(info["title"])
@@ -162,7 +177,6 @@ def save_movie_from_post(msg):
 
     data["movies"].append(entry)
     save_data(data)
-
     return entry
 
 # ================================
@@ -191,6 +205,49 @@ def get_top_movies(data):
     return sorted(data["movies"], key=get_score, reverse=True)[:10]
 
 # ================================
+# 📂 AUTO CATEGORIES
+# ================================
+
+def get_categories(data):
+    categories = {}
+
+    for m in data["movies"]:
+        for g in m.get("genre", []):
+            categories.setdefault(g, []).append(m)
+
+    return categories
+
+# ================================
+# 🎮 SWIPE UI
+# ================================
+
+def show_swipe(chat_id, movies, index=0):
+    SESSION[chat_id] = movies
+
+    if not movies:
+        return
+
+    m = movies[index]
+
+    nav = []
+    if index > 0:
+        nav.append({"text": "⬅️", "callback_data": f"swipe_{index-1}"})
+    if index < len(movies)-1:
+        nav.append({"text": "➡️", "callback_data": f"swipe_{index+1}"})
+
+    safe_post("sendPhoto", {
+        "chat_id": chat_id,
+        "photo": generate_poster(m["title"]),
+        "caption": f"🎬 {m['title']}",
+        "reply_markup": {
+            "inline_keyboard": [
+                nav,
+                [{"text": "▶️ Öffnen", "callback_data": f"movie_{m['title']}"}]
+            ]
+        }
+    })
+
+# ================================
 # UI
 # ================================
 
@@ -200,21 +257,19 @@ def show_row(chat_id, title, movies):
         "text": f"━━━ {title} ━━━"
     })
 
-    buttons = []
-    for m in movies[:5]:
-        buttons.append({
-            "text": m["title"][:15],
-            "callback_data": f"movie_{m['title']}"
-        })
+    buttons = [[{
+        "text": m["title"][:15],
+        "callback_data": f"movie_{m['title']}"
+    } for m in movies[:5]]]
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
         "text": " ",
-        "reply_markup": {"inline_keyboard": [buttons]}
+        "reply_markup": {"inline_keyboard": buttons}
     })
 
 # ================================
-# 🎬 CARD (UPGRADED)
+# 🎬 CARD
 # ================================
 
 def send_card(chat_id, movie):
@@ -253,8 +308,12 @@ def show_home(chat_id):
         "text": "🎬 Library of Legends\n🔥 Netflix System"
     })
 
-    show_row(chat_id, "🔥 Trending", get_top_movies(data))
+    show_swipe(chat_id, get_top_movies(data))
     show_row(chat_id, "🆕 Neu", list(reversed(data["movies"]))[:10])
+
+    categories = get_categories(data)
+    for name, movies in categories.items():
+        show_row(chat_id, f"🎬 {name}", movies[:10])
 
 # ================================
 # VIDEO
@@ -295,6 +354,10 @@ def webhook():
 
         if cb == "home":
             show_home(chat_id)
+
+        elif cb.startswith("swipe_"):
+            index = int(cb.split("_")[1])
+            show_swipe(chat_id, SESSION.get(chat_id, []), index)
 
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
