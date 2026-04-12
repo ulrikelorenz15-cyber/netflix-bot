@@ -1,11 +1,10 @@
 # ================================
-# 🎬 REAL NETFLIX STREAM SYSTEM
+# 🎬 NETFLIX REAL PLAYER UI SYSTEM
 # ================================
 
 import os
 import sqlite3
 import requests
-import re
 import time
 from flask import Flask, request, jsonify, render_template_string, Response
 
@@ -32,7 +31,8 @@ def init_db():
         id TEXT,
         title TEXT,
         story TEXT,
-        file_id TEXT
+        file_id TEXT,
+        views INTEGER
     )
     """)
 
@@ -49,27 +49,26 @@ def save(msg):
     if "video" not in msg:
         return
 
-    title = "Film"
-    if msg.get("caption"):
-        title = msg["caption"].split("\n")[0]
+    title = msg.get("caption","Film").split("\n")[0]
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO movies VALUES(?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?)
     """, (
         str(int(time.time())),
         title,
         msg.get("caption",""),
-        msg["video"]["file_id"]
+        msg["video"]["file_id"],
+        0
     ))
 
     con.commit()
     con.close()
 
 # ================================
-# GET FILE URL
+# TELEGRAM FILE URL
 # ================================
 
 def get_file_url(file_id):
@@ -78,7 +77,7 @@ def get_file_url(file_id):
     return f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
 
 # ================================
-# STREAM ROUTE
+# STREAM
 # ================================
 
 @app.route("/stream/<id>")
@@ -97,8 +96,7 @@ def stream(id):
     def generate():
         with requests.get(file_url, stream=True) as r:
             for chunk in r.iter_content(chunk_size=1024*1024):
-                if chunk:
-                    yield chunk
+                yield chunk
 
     return Response(generate(), content_type="video/mp4")
 
@@ -118,12 +116,13 @@ def api():
         {
             "id": r[0],
             "title": r[1],
-            "story": r[2]
+            "story": r[2],
+            "views": r[4]
         } for r in rows
     ])
 
 # ================================
-# UI (ECHTER PLAYER)
+# UI (NETFLIX STYLE)
 # ================================
 
 @app.route("/")
@@ -134,19 +133,52 @@ def home():
 <meta name="viewport" content="width=device-width">
 
 <style>
-body {background:black;color:white;font-family:sans-serif;margin:0}
+body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
-.grid {
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:10px;
-    padding:10px;
+/* NAV */
+.nav {
+    position:fixed;
+    width:100%;
+    padding:15px;
+    background:linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+    z-index:10;
 }
 
-.card {
+/* HERO */
+.hero {
+    height:60vh;
+    display:flex;
+    align-items:end;
+    padding:30px;
     background:#222;
+}
+
+/* ROW */
+.row {
+    display:flex;
+    overflow-x:auto;
     padding:20px;
+}
+
+/* CARD */
+.card {
+    margin-right:10px;
+    padding:20px;
+    background:#222;
     cursor:pointer;
+    transition:0.3s;
+}
+
+.card:hover {
+    transform:scale(1.1);
+}
+
+/* PLAYER */
+.player {
+    position:fixed;
+    bottom:0;
+    width:100%;
+    background:black;
 }
 
 video {
@@ -156,24 +188,35 @@ video {
 
 <body>
 
-<h2 style="padding:10px">🎬 Meine Filme</h2>
+<div class="nav">🎬 NETFLIX</div>
 
-<div id="grid" class="grid"></div>
+<div id="hero" class="hero"></div>
 
-<div id="player"></div>
+<h2 style="padding-left:20px">🔥 Trending</h2>
+<div id="row" class="row"></div>
+
+<div id="player" class="player"></div>
 
 <script>
+let DATA = [];
+
 fetch("/api")
 .then(r=>r.json())
 .then(data=>{
-    let grid = document.getElementById("grid");
+    DATA = data;
+
+    if(data.length){
+        document.getElementById("hero").innerText = data[0].title;
+    }
+
+    let row = document.getElementById("row");
 
     data.forEach(m=>{
-        let div = document.createElement("div");
-        div.className = "card";
-        div.innerText = m.title;
+        let card = document.createElement("div");
+        card.className = "card";
+        card.innerText = m.title;
 
-        div.onclick = ()=>{
+        card.onclick = ()=>{
             document.getElementById("player").innerHTML = `
                 <video controls autoplay>
                     <source src="/stream/${m.id}" type="video/mp4">
@@ -181,7 +224,7 @@ fetch("/api")
             `;
         };
 
-        grid.appendChild(div);
+        row.appendChild(card);
     });
 });
 </script>
