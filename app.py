@@ -1,5 +1,5 @@
 # ================================
-# 🎬 FINAL SAFE BACKEND
+# 🎬 NETFLIX FINAL SYSTEM (RENDER READY)
 # ================================
 
 import os
@@ -7,7 +7,7 @@ import sqlite3
 import requests
 import re
 import time
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template_string
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -52,20 +52,21 @@ init_db()
 # ================================
 
 def get_cover(title):
-    if not TMDB_KEY:
-        return "https://placehold.co/300x450?text=" + title
+    try:
+        if TMDB_KEY:
+            r = requests.get(
+                "https://api.themoviedb.org/3/search/movie",
+                params={"api_key": TMDB_KEY, "query": title}
+            ).json()
 
-    r = requests.get(
-        "https://api.themoviedb.org/3/search/movie",
-        params={"api_key": TMDB_KEY, "query": title}
-    ).json()
+            if r.get("results"):
+                path = r["results"][0].get("poster_path")
+                if path:
+                    return "https://image.tmdb.org/t/p/w500" + path
+    except:
+        pass
 
-    if r.get("results"):
-        path = r["results"][0].get("poster_path")
-        if path:
-            return "https://image.tmdb.org/t/p/w500" + path
-
-    return "https://placehold.co/300x450?text=" + title
+    return "https://placehold.co/300x450?text=" + title.replace(" ","+")
 
 # ================================
 # PARSER
@@ -75,28 +76,19 @@ def extract_data(caption):
     if not caption:
         return "Film", "-", "General"
 
-    import re
-
-    # 🎬 Titel
     title_match = re.search(r"🎬\s*(.*?)\s*\(", caption)
     title = title_match.group(1) if title_match else caption.split("\n")[0]
 
-    # 📖 Story
     story_match = re.search(r"STORY\s*(.*?)\s*(▶️|#|$)", caption, re.S)
     story = story_match.group(1).strip() if story_match else "-"
 
-    # 🏷 Kategorie (nur echte Tags, keine Zahlen!)
     tags = re.findall(r"#([A-Za-z]+)", caption)
-
-    if tags:
-        category = tags[0]
-    else:
-        category = "General"
+    category = tags[0] if tags else "General"
 
     return title.strip(), story.strip(), category
 
 # ================================
-# SAVE
+# SAVE TELEGRAM
 # ================================
 
 def save(msg):
@@ -203,12 +195,165 @@ def progress():
     return "ok"
 
 # ================================
-# ROOT
+# 🎬 NETFLIX UI (DIRECT ON RENDER)
 # ================================
 
 @app.route("/")
-def root():
-    return "✅ Backend läuft"
+def home():
+    return render_template_string("""
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width">
+
+<style>
+body {margin:0;background:#141414;color:white;font-family:sans-serif}
+
+/* NAV */
+.nav {
+  padding:15px;
+  background:black;
+  font-weight:bold;
+}
+
+/* HERO */
+.hero {
+  height:60vh;
+  display:flex;
+  align-items:end;
+  padding:30px;
+  background-size:cover;
+}
+
+/* ROW */
+.row {
+  display:flex;
+  overflow-x:auto;
+  padding:20px;
+}
+
+/* CARD */
+.card {
+  min-width:150px;
+  height:220px;
+  margin-right:10px;
+  background-size:cover;
+  border-radius:10px;
+  position:relative;
+  cursor:pointer;
+  transition:0.3s;
+}
+
+.card:hover {
+  transform:scale(1.2);
+}
+
+/* TITLE */
+.card-title {
+  position:absolute;
+  bottom:0;
+  padding:10px;
+  background:linear-gradient(to top, black, transparent);
+  width:100%;
+}
+
+/* PROGRESS */
+.progress {
+  height:4px;
+  background:red;
+  position:absolute;
+  bottom:0;
+}
+
+/* MODAL */
+.modal {
+  position:fixed;
+  top:0;
+  width:100%;
+  height:100%;
+  background:black;
+  display:none;
+  padding:20px;
+}
+
+video {
+  width:100%;
+}
+</style>
+
+<body>
+
+<div class="nav">🎬 NETFLIX</div>
+
+<div id="hero" class="hero"></div>
+
+<h2 style="padding-left:20px">🔥 Filme</h2>
+<div id="row" class="row"></div>
+
+<div id="modal" class="modal">
+  <h1 id="title"></h1>
+  <p id="story"></p>
+  <video id="video" controls autoplay></video>
+  <button onclick="closeModal()">✖</button>
+</div>
+
+<script>
+fetch("/movies")
+.then(r=>r.json())
+.then(data=>{
+
+  if(data.length){
+    document.getElementById("hero").style.backgroundImage =
+      "url("+data[0].cover+")";
+    document.getElementById("hero").innerHTML =
+      "<h1>"+data[0].title+"</h1>";
+  }
+
+  let row=document.getElementById("row");
+
+  data.forEach(m=>{
+    let card=document.createElement("div");
+    card.className="card";
+    card.style.backgroundImage="url("+m.cover+")";
+
+    card.innerHTML=`
+      <div class="card-title">${m.title}</div>
+      <div class="progress" style="width:${m.progress}%"></div>
+    `;
+
+    card.onclick=()=>{
+      document.getElementById("modal").style.display="block";
+      document.getElementById("title").innerText=m.title;
+      document.getElementById("story").innerText=m.story;
+
+      let video=document.getElementById("video");
+      video.src="/stream/"+m.id;
+
+      video.ontimeupdate=()=>{
+        let p=(video.currentTime/video.duration)*100;
+
+        fetch("/progress",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            id:m.id,
+            progress:p
+          })
+        });
+      };
+    };
+
+    row.appendChild(card);
+  });
+});
+
+function closeModal(){
+  document.getElementById("modal").style.display="none";
+}
+</script>
+
+</body>
+</html>
+""")
 
 # ================================
 # WEBHOOK
