@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (MENU + UI FINAL + ULTRA MATCH + AUTO DB + NETFLIX UI)
+# 🎬 NETFLIX BOT FINAL (ULTIMATE GOD MODE FINAL)
 # ================================
 
 import os
@@ -61,6 +61,25 @@ def auto_db_match(title):
     return None
 
 # ================================
+# 🧠 OFFLINE MATCH
+# ================================
+
+def offline_match(title, data):
+    t = title.lower()
+
+    for m in data["movies"]:
+        if t == m["title"].lower():
+            return m["title"]
+
+    for m in data["movies"]:
+        if t in m["title"].lower():
+            return m["title"]
+
+    titles = [m["title"] for m in data["movies"]]
+    match = get_close_matches(title, titles, n=1, cutoff=0.5)
+    return match[0] if match else None
+
+# ================================
 # 🧠 FUZZY MATCH
 # ================================
 
@@ -106,6 +125,13 @@ def try_multiple_titles(title):
     return None
 
 # ================================
+# 🎬 AUTO POSTER
+# ================================
+
+def generate_poster(title):
+    return f"https://dummyimage.com/600x900/000/fff&text={title.replace(' ','+')}"
+
+# ================================
 # 🎞 NETFLIX ROW
 # ================================
 
@@ -129,11 +155,60 @@ def show_row(chat_id, title, movies):
     })
 
 # ================================
-# 🏆 TOP SYSTEM
+# 🔥 SWIPE UI
+# ================================
+
+def show_swipe(chat_id, movies, page=0):
+    SESSION[chat_id] = movies
+
+    if not movies:
+        return
+
+    total = len(movies)
+    m = movies[page]
+
+    movie = get_movie(m["title"]) or {
+        "Title": m["title"],
+        "Poster": generate_poster(m["title"]),
+        "imdbRating": "?"
+    }
+
+    nav = []
+
+    if page > 0:
+        nav.append({"text": "⬅️", "callback_data": f"swipe_{page-1}"})
+
+    if page < total - 1:
+        nav.append({"text": "➡️", "callback_data": f"swipe_{page+1}"})
+
+    buttons = [nav] if nav else []
+    buttons.append([{"text": "▶️ Öffnen", "callback_data": f"movie_{m['title']}"}])
+
+    safe_post("sendPhoto", {
+        "chat_id": chat_id,
+        "photo": movie.get("Poster") or generate_poster(m["title"]),
+        "caption": f"🎬 {movie['Title']} • ⭐ {movie.get('imdbRating')}",
+        "reply_markup": {"inline_keyboard": buttons}
+    })
+
+# ================================
+# 📊 TRENDING
 # ================================
 
 def get_top_movies(data):
     return sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True)[:10]
+
+def show_trending_chart(chat_id, data):
+    top = get_top_movies(data)
+
+    text = "📊 TOP FILME\n\n"
+    for i, m in enumerate(top, 1):
+        text += f"{i}. {m['title']} ({m.get('views',0)}🔥)\n"
+
+    safe_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": text
+    })
 
 # ================================
 # OMDb
@@ -205,14 +280,14 @@ def show_series_row(chat_id, data):
         })
 
 # ================================
-# 🎬 CARD (DEIN DESIGN)
+# 🎬 CARD
 # ================================
 
 def send_card(chat_id, movie, local):
     caption = f"""🎬 {movie['Title'].upper()} ({movie['Year']})
 🔥 4K • {movie.get('Genre','')}
 ━━━━━━━━━━━━━━
-⭐ {movie['imdbRating']} • ⏱ {movie.get('Runtime')} • 🔞 FSK 16
+⭐ {movie.get('imdbRating')} • ⏱ {movie.get('Runtime')} • 🔞 FSK 16
 🎥 {movie.get('Director')}
 ━━━━━━━━━━━━━━
 ▶️ #{local['id']}
@@ -221,7 +296,7 @@ def send_card(chat_id, movie, local):
 
     safe_post("sendPhoto", {
         "chat_id": chat_id,
-        "photo": movie.get("Poster") or "https://via.placeholder.com/300x450"
+        "photo": movie.get("Poster") or generate_poster(movie["Title"])
     })
 
     safe_post("sendVideo", {
@@ -231,7 +306,7 @@ def send_card(chat_id, movie, local):
     })
 
 # ================================
-# HOME UI
+# HOME
 # ================================
 
 def show_home(chat_id):
@@ -246,6 +321,7 @@ def show_home(chat_id):
     show_row(chat_id, "🆕 Neu", list(reversed(data["movies"]))[:10])
     show_row(chat_id, "🏆 Top", get_top_movies(data))
 
+    show_trending_chart(chat_id, data)
     show_series_row(chat_id, data)
 
 # ================================
@@ -260,9 +336,14 @@ def handle_video(msg):
     movie = None
 
     if raw:
-        local = auto_db_match(raw)
-        if local:
-            movie = try_multiple_titles(local)
+        auto = auto_db_match(raw)
+        if auto:
+            movie = try_multiple_titles(auto)
+
+    if not movie and raw:
+        offline = offline_match(raw, data)
+        if offline:
+            movie = {"Title": offline}
 
     if not movie and raw:
         movie = try_multiple_titles(raw)
@@ -320,6 +401,10 @@ def webhook():
 
         if cb == "home":
             show_home(chat_id)
+
+        elif cb.startswith("swipe_"):
+            page = int(cb.split("_")[1])
+            show_swipe(chat_id, SESSION.get(chat_id, []), page)
 
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
