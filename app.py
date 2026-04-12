@@ -1,5 +1,5 @@
 # ================================
-# 🎬 FINAL BACKEND (CLEAN VERSION)
+# 🎬 GOD MODE+ BACKEND
 # ================================
 
 import os
@@ -14,6 +14,7 @@ app = Flask(__name__)
 CORS(app)
 
 TOKEN = os.getenv("BOT_TOKEN")
+TMDB_KEY = os.getenv("TMDB_KEY")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 DB = "netflix.db"
@@ -35,6 +36,8 @@ def init_db():
         title TEXT,
         story TEXT,
         file_id TEXT,
+        cover TEXT,
+        category TEXT,
         progress INTEGER
     )
     """)
@@ -45,56 +48,75 @@ def init_db():
 init_db()
 
 # ================================
-# 🎯 FINAL PARSER (CLEAN)
+# TMDB COVER
+# ================================
+
+def get_cover(title):
+    try:
+        r = requests.get(
+            "https://api.themoviedb.org/3/search/movie",
+            params={"api_key": TMDB_KEY, "query": title}
+        ).json()
+
+        if r.get("results"):
+            path = r["results"][0].get("poster_path")
+            if path:
+                return "https://image.tmdb.org/t/p/w500" + path
+    except:
+        pass
+
+    return "https://placehold.co/300x450"
+
+# ================================
+# PARSER
 # ================================
 
 def extract_data(caption):
     if not caption:
-        return "Film", "-"
+        return "Film", "-", "General"
 
-    # 🎬 Titel sauber
     title_match = re.search(r"🎬\s*(.*?)\s*\(", caption)
     title = title_match.group(1) if title_match else caption.split("\n")[0]
 
-    # 📖 Story sauber
-    story = "-"
     story_match = re.search(r"STORY\s*(.*?)\s*(▶️|#|$)", caption, re.S)
+    story = story_match.group(1).strip() if story_match else "-"
 
-    if story_match:
-        story = story_match.group(1).strip()
+    tags = re.findall(r"#(\w+)", caption)
+    category = tags[0] if tags else "General"
 
-    return title.strip(), story.strip()
+    return title.strip(), story.strip(), category
 
 # ================================
-# SAVE TELEGRAM
+# SAVE
 # ================================
 
 def save(msg):
     if "video" not in msg:
         return
 
-    title, story = extract_data(msg.get("caption",""))
+    title, story, category = extract_data(msg.get("caption",""))
+    cover = get_cover(title)
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO movies VALUES(?,?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?,?,?)
     """, (
         str(int(time.time())),
         title,
         story,
         msg["video"]["file_id"],
+        cover,
+        category,
         0
     ))
 
     con.commit()
     con.close()
 
-    print("✅ Saved:", title)
-
 # ================================
-# TELEGRAM FILE URL
+# TELEGRAM FILE
 # ================================
 
 def get_file(file_id):
@@ -114,13 +136,10 @@ def stream(id):
     m = cur.execute("SELECT * FROM movies WHERE id=?", (id,)).fetchone()
     con.close()
 
-    if not m:
-        return "Not found"
-
-    file_url = get_file(m[3])
+    url = get_file(m[3])
 
     def generate():
-        with requests.get(file_url, stream=True) as r:
+        with requests.get(url, stream=True) as r:
             for chunk in r.iter_content(chunk_size=1024*1024):
                 yield chunk
 
@@ -143,7 +162,9 @@ def movies():
             "id": r[0],
             "title": r[1],
             "story": r[2],
-            "progress": r[4]
+            "cover": r[4],
+            "category": r[5],
+            "progress": r[6]
         } for r in rows
     ])
 
@@ -167,14 +188,6 @@ def progress():
     con.close()
 
     return "ok"
-
-# ================================
-# ROOT
-# ================================
-
-@app.route("/")
-def root():
-    return "✅ Backend läuft"
 
 # ================================
 # WEBHOOK
