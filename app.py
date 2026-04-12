@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX FINAL SYSTEM (DETAIL VIEW)
+# 🎬 NETFLIX FINAL SYSTEM (REAL APP MODE)
 # ================================
 
 import os
@@ -7,7 +7,6 @@ import json
 import requests
 import re
 import time
-import threading
 from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
@@ -16,6 +15,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 DATA_FILE = "data.json"
 TMDB_KEY = os.getenv("TMDB_KEY")
+
+USER_STATE = {}
 
 # ================================
 # DATA
@@ -33,13 +34,13 @@ def get_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# TMDB POSTER
+# TMDB COVER
 # ================================
 
 def get_poster(title):
     try:
         r = requests.get(
-            f"https://api.themoviedb.org/3/search/movie",
+            "https://api.themoviedb.org/3/search/movie",
             params={"api_key": TMDB_KEY, "query": title}
         ).json()
 
@@ -83,7 +84,20 @@ def score(m):
     return m["views"] * 2 + (5 - (time.time() - m["timestamp"]) / 86400)
 
 # ================================
-# HOME (NETFLIX UI)
+# USER STATE
+# ================================
+
+def update_continue(uid, mid):
+    USER_STATE.setdefault(uid, [])
+
+    if mid in USER_STATE[uid]:
+        USER_STATE[uid].remove(mid)
+
+    USER_STATE[uid].insert(0, mid)
+    USER_STATE[uid] = USER_STATE[uid][:5]
+
+# ================================
+# HOME UI
 # ================================
 
 @app.route("/")
@@ -120,7 +134,7 @@ def home():
     """, trending=trending)
 
 # ================================
-# DETAIL PAGE
+# DETAIL
 # ================================
 
 @app.route("/movie/<mid>")
@@ -128,59 +142,50 @@ def movie(mid):
     data = load_data()["movies"]
     m = next((x for x in data if x["id"] == mid), None)
 
-    if not m:
-        return "Not found"
-
     return render_template_string("""
     <html>
     <head>
     <style>
-    body {background:#141414;color:white;font-family:sans-serif;margin:0}
-    .container {padding:20px}
+    body {background:#141414;color:white;font-family:sans-serif;padding:20px}
     img {width:200px;border-radius:10px}
-    .btn {
-        background:red;
-        padding:10px 20px;
-        border-radius:5px;
-        color:white;
-        text-decoration:none;
-    }
+    .btn {background:red;padding:10px 20px;color:white;text-decoration:none;border-radius:5px}
     </style>
     </head>
     <body>
 
-    <div class="container">
-        <img src="{{m.poster}}">
+    <img src="{{m.poster}}">
+    <h1>{{m.title}} ({{m.year}})</h1>
 
-        <h1>{{m.title}} ({{m.year}})</h1>
+    <p>⭐ {{m.rating}} • ⏱ {{m.runtime}}</p>
+    <p>{{m.genre}}</p>
 
-        <p>⭐ {{m.rating}} • ⏱ {{m.runtime}}</p>
-        <p>{{m.genre}}</p>
+    <h3>📖 STORY</h3>
+    <p>{{m.story}}</p>
 
-        <h3>📖 STORY</h3>
-        <p>{{m.story}}</p>
+    <br>
 
-        <br>
-
-        <a class="btn" href="/play/{{m.id}}">▶️ Play</a>
-    </div>
+    <a class="btn" href="/play/{{m.id}}">▶️ Play</a>
+    <a class="btn" href="/edit/{{m.id}}">✏️ Edit</a>
+    <a class="btn" href="/delete/{{m.id}}">🗑 Delete</a>
 
     </body>
     </html>
     """, m=m)
 
 # ================================
-# PLAY (TELEGRAM SEND)
+# PLAY (USER BASED)
 # ================================
 
 @app.route("/play/<mid>")
 def play(mid):
+    uid = request.args.get("uid")
+
     data = load_data()["movies"]
     m = next((x for x in data if x["id"] == mid), None)
 
-    if m:
+    if m and uid:
         requests.post(f"{URL}/sendVideo", json={
-            "chat_id": os.getenv("ADMIN_ID"),
+            "chat_id": uid,
             "video": m["file_id"],
             "caption": f"▶️ {m['title']}"
         })
@@ -188,7 +193,40 @@ def play(mid):
         m["views"] += 1
         save_data({"movies": data})
 
-    return "▶️ Wird in Telegram abgespielt!"
+    return "▶️ Wird abgespielt..."
+
+# ================================
+# EDIT
+# ================================
+
+@app.route("/edit/<mid>", methods=["GET","POST"])
+def edit(mid):
+    data = load_data()
+    m = next((x for x in data["movies"] if x["id"] == mid), None)
+
+    if request.method == "POST":
+        m["title"] = request.form["title"]
+        m["story"] = request.form["story"]
+        save_data(data)
+
+    return render_template_string("""
+    <form method="post">
+        <input name="title" value="{{m.title}}"><br>
+        <textarea name="story">{{m.story}}</textarea><br>
+        <button>Save</button>
+    </form>
+    """, m=m)
+
+# ================================
+# DELETE
+# ================================
+
+@app.route("/delete/<mid>")
+def delete(mid):
+    data = load_data()
+    data["movies"] = [m for m in data["movies"] if m["id"] != mid]
+    save_data(data)
+    return "Deleted"
 
 # ================================
 # WEBHOOK
@@ -204,7 +242,7 @@ def webhook():
 
         if "video" in msg:
             data = load_data()
-            info = extract(msg.get("caption", ""))
+            info = extract(msg.get("caption",""))
 
             if not info:
                 return "ok"
