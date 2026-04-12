@@ -1,5 +1,5 @@
 # ================================
-# 🎬 FINAL NETFLIX SYSTEM (ULTRA STABLE)
+# 🎬 FINAL ELITE UI SYSTEM
 # ================================
 
 import os
@@ -126,7 +126,7 @@ def get_file(file_id):
     return f"https://api.telegram.org/file/bot{TOKEN}/{path}"
 
 # ================================
-# 🎥 STREAM (FIXED RANGE SUPPORT)
+# 🎥 STREAM FIX (WICHTIG)
 # ================================
 
 @app.route("/stream/<id>")
@@ -151,7 +151,7 @@ def stream(id):
     r = requests.get(file_url, headers=headers, stream=True)
 
     def generate():
-        for chunk in r.iter_content(chunk_size=1024*1024):
+        for chunk in r.iter_content(1024*1024):
             if chunk:
                 yield chunk
 
@@ -208,7 +208,7 @@ def progress():
     return "ok"
 
 # ================================
-# 🎬 UI (FINAL)
+# 🎬 FINAL ELITE UI
 # ================================
 
 @app.route("/")
@@ -220,27 +220,108 @@ def home():
 
 <style>
 body {margin:0;background:#141414;color:white;font-family:sans-serif}
-.nav {padding:15px;background:black}
-.hero {height:60vh;display:flex;align-items:end;padding:30px;background-size:cover}
-.row {display:flex;overflow-x:auto;padding:20px}
+
+/* NAV */
+.nav {
+  display:flex;
+  justify-content:space-between;
+  padding:15px;
+  background:black;
+}
+
+.nav input {
+  background:#222;
+  border:none;
+  color:white;
+  padding:5px;
+}
+
+/* HERO */
+.hero {
+  height:60vh;
+  display:flex;
+  align-items:end;
+  padding:30px;
+  background-size:cover;
+}
+
+/* ROW */
+.row {
+  display:flex;
+  overflow-x:auto;
+  padding:20px;
+}
+
+/* CARD */
 .card {
-  width:160px;height:240px;margin-right:10px;
-  background-size:cover;border-radius:10px;
-  cursor:pointer;transition:0.3s;
+  width:180px;
+  height:260px;
+  margin-right:10px;
+  position:relative;
+  border-radius:10px;
+  overflow:hidden;
+  cursor:pointer;
+  transition:0.3s;
 }
-.card:hover {transform:scale(1.2)}
+
+.card:hover {
+  transform:scale(1.3);
+}
+
+/* VIDEO PREVIEW */
+.preview {
+  position:absolute;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  opacity:0;
+}
+
+.card:hover .preview {
+  opacity:1;
+}
+
+/* COVER */
+.cover {
+  position:absolute;
+  width:100%;
+  height:100%;
+  background-size:cover;
+}
+
+/* TITLE */
+.title {
+  position:absolute;
+  bottom:0;
+  padding:10px;
+  background:linear-gradient(to top, black, transparent);
+  width:100%;
+}
+
+/* MODAL */
 .modal {
-  position:fixed;top:0;width:100%;height:100%;
-  background:black;display:none;
+  position:fixed;
+  top:0;
+  width:100%;
+  height:100%;
+  background:black;
+  display:none;
 }
-video {width:100%}
+
+video {
+  width:100%;
+}
 </style>
 
 <body>
 
-<div class="nav">🎬 NETFLIX</div>
+<div class="nav">
+  <div>🎬 NETFLIX</div>
+  <input placeholder="Suche..." oninput="search(this.value)">
+</div>
+
 <div id="hero" class="hero"></div>
-<div id="row" class="row"></div>
+<div id="content"></div>
 
 <div id="modal" class="modal">
   <video id="video" controls autoplay></video>
@@ -248,46 +329,69 @@ video {width:100%}
 </div>
 
 <script>
+let DATA=[];
+
 fetch("/movies")
 .then(r=>r.json())
 .then(data=>{
+  DATA=data;
+  render(data);
+});
+
+function render(data){
+  let content=document.getElementById("content");
+  content.innerHTML="";
 
   if(data.length){
     document.getElementById("hero").style.backgroundImage =
       "url("+data[0].cover+")";
   }
 
-  let row=document.getElementById("row");
+  let categories=[...new Set(data.map(m=>m.category))];
 
-  data.forEach(m=>{
-    let card=document.createElement("div");
-    card.className="card";
-    card.style.backgroundImage="url("+m.cover+")";
+  categories.forEach(cat=>{
+    let title=document.createElement("h2");
+    title.innerText=cat;
+    content.appendChild(title);
 
-    card.onclick=()=>{
-      let modal=document.getElementById("modal");
-      let video=document.getElementById("video");
+    let row=document.createElement("div");
+    row.className="row";
 
-      modal.style.display="block";
-      video.src="/stream/"+m.id;
+    data.filter(m=>m.category===cat).forEach(m=>{
+      let card=document.createElement("div");
+      card.className="card";
 
-      video.ontimeupdate=()=>{
-        let p=(video.currentTime/video.duration)*100;
+      card.innerHTML=`
+        <video class="preview" src="/stream/${m.id}" muted loop></video>
+        <div class="cover" style="background-image:url(${m.cover})"></div>
+        <div class="title">${m.title}</div>
+      `;
 
-        fetch("/progress",{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            id:m.id,
-            progress:p
-          })
-        });
+      card.onmouseenter=()=>{
+        card.querySelector("video").play();
       };
-    };
 
-    row.appendChild(card);
+      card.onmouseleave=()=>{
+        card.querySelector("video").pause();
+      };
+
+      card.onclick=()=>{
+        let v=document.getElementById("video");
+        v.src="/stream/"+m.id;
+        document.getElementById("modal").style.display="block";
+      };
+
+      row.appendChild(card);
+    });
+
+    content.appendChild(row);
   });
-});
+}
+
+function search(q){
+  let f=DATA.filter(m=>m.title.toLowerCase().includes(q.toLowerCase()));
+  render(f);
+}
 
 function closeModal(){
   document.getElementById("modal").style.display="none";
