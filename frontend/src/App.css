@@ -1,0 +1,48 @@
+body {
+  margin: 0;
+  background: #141414;
+  color: white;
+  font-family: sans-serif;
+}
+
+.hero {
+  height: 60vh;
+  display: flex;
+  align-items: end;
+  padding: 20px;
+  background: #222;
+  font-size: 30px;
+}
+
+.row {
+  display: flex;
+  overflow-x: auto;
+  padding: 20px;
+}
+
+.card {
+  margin-right: 10px;
+  padding: 20px;
+  background: #222;
+  cursor: pointer;
+  position: relative;
+}
+
+.progress {
+  height: 4px;
+  background: red;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+}
+
+.player {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  background: black;
+}
+
+video {
+  width: 100%;
+}
