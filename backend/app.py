@@ -1,5 +1,5 @@
 # ================================
-# 🎬 FINAL NETFLIX SYSTEM (STABLE)
+# 🎬 FINAL NETFLIX SYSTEM (ULTRA STABLE)
 # ================================
 
 import os
@@ -126,7 +126,7 @@ def get_file(file_id):
     return f"https://api.telegram.org/file/bot{TOKEN}/{path}"
 
 # ================================
-# STREAM
+# 🎥 STREAM (FIXED RANGE SUPPORT)
 # ================================
 
 @app.route("/stream/<id>")
@@ -138,17 +138,30 @@ def stream(id):
     con.close()
 
     if not m:
-        return "Not found"
+        return "Not found", 404
 
-    url = get_file(m[3])
+    file_url = get_file(m[3])
+
+    range_header = request.headers.get('Range', None)
+    headers = {}
+
+    if range_header:
+        headers['Range'] = range_header
+
+    r = requests.get(file_url, headers=headers, stream=True)
 
     def generate():
-        with requests.get(url, stream=True) as r:
-            for chunk in r.iter_content(1024*1024):
-                if chunk:
-                    yield chunk
+        for chunk in r.iter_content(chunk_size=1024*1024):
+            if chunk:
+                yield chunk
 
-    return Response(generate(), content_type="video/mp4")
+    response = Response(generate(), status=r.status_code, content_type='video/mp4')
+
+    response.headers['Content-Range'] = r.headers.get('Content-Range', '')
+    response.headers['Accept-Ranges'] = 'bytes'
+    response.headers['Content-Length'] = r.headers.get('Content-Length', '')
+
+    return response
 
 # ================================
 # API
@@ -207,65 +220,26 @@ def home():
 
 <style>
 body {margin:0;background:#141414;color:white;font-family:sans-serif}
-
-/* NAV */
-.nav {
-  padding:15px;
-  background:black;
-}
-
-/* HERO */
-.hero {
-  height:60vh;
-  display:flex;
-  align-items:end;
-  padding:30px;
-  background-size:cover;
-}
-
-/* ROW */
-.row {
-  display:flex;
-  overflow-x:auto;
-  padding:20px;
-}
-
-/* CARD */
+.nav {padding:15px;background:black}
+.hero {height:60vh;display:flex;align-items:end;padding:30px;background-size:cover}
+.row {display:flex;overflow-x:auto;padding:20px}
 .card {
-  width:160px;
-  height:240px;
-  margin-right:10px;
-  background-size:cover;
-  border-radius:10px;
-  cursor:pointer;
-  transition:0.3s;
+  width:160px;height:240px;margin-right:10px;
+  background-size:cover;border-radius:10px;
+  cursor:pointer;transition:0.3s;
 }
-
-.card:hover {
-  transform:scale(1.2);
-}
-
-/* MODAL */
+.card:hover {transform:scale(1.2)}
 .modal {
-  position:fixed;
-  top:0;
-  width:100%;
-  height:100%;
-  background:black;
-  display:none;
+  position:fixed;top:0;width:100%;height:100%;
+  background:black;display:none;
 }
-
-video {
-  width:100%;
-}
+video {width:100%}
 </style>
 
 <body>
 
 <div class="nav">🎬 NETFLIX</div>
-
 <div id="hero" class="hero"></div>
-
 <div id="row" class="row"></div>
 
 <div id="modal" class="modal">
@@ -291,13 +265,14 @@ fetch("/movies")
     card.style.backgroundImage="url("+m.cover+")";
 
     card.onclick=()=>{
-      document.getElementById("modal").style.display="block";
-      document.getElementById("video").src="/stream/"+m.id;
+      let modal=document.getElementById("modal");
+      let video=document.getElementById("video");
 
-      let v=document.getElementById("video");
+      modal.style.display="block";
+      video.src="/stream/"+m.id;
 
-      v.ontimeupdate=()=>{
-        let p=(v.currentTime/v.duration)*100;
+      video.ontimeupdate=()=>{
+        let p=(video.currentTime/video.duration)*100;
 
         fetch("/progress",{
           method:"POST",
