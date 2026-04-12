@@ -25,73 +25,57 @@ export default function App() {
     );
   };
 
+  const categories = [...new Set(filtered.map(m => m.category))];
+
   return (
     <div className="app">
 
-      {/* NAV */}
       <div className="nav">
         <div className="logo">NETFLIX</div>
         <input placeholder="🔍 Suche..." onChange={(e)=>search(e.target.value)} />
       </div>
 
-      {/* HERO */}
       {filtered[0] && (
-        <div className="hero">
-          <div className="hero-content">
+        <div
+          className="hero"
+          style={{backgroundImage:`url(${filtered[0].cover})`}}
+        >
+          <div className="hero-overlay">
             <h1>{filtered[0].title}</h1>
-            <p>{filtered[0].story}</p>
             <button onClick={()=>setCurrent(filtered[0])}>▶ Play</button>
           </div>
         </div>
       )}
 
-      {/* GRID */}
-      <div className="grid">
-        {filtered.map(m => (
-          <div
-            key={m.id}
-            className="card"
-            onClick={()=>setCurrent(m)}
-          >
-            <div className="overlay">
-              <span>{m.title}</span>
-            </div>
+      {categories.map(cat => (
+        <div key={cat}>
+          <h2 className="category">{cat}</h2>
 
-            <div
-              className="progress"
-              style={{width: m.progress + "%"}}
-            ></div>
+          <div className="row">
+            {filtered
+              .filter(m => m.category === cat)
+              .map(m => (
+                <div
+                  key={m.id}
+                  className="card"
+                  style={{backgroundImage:`url(${m.cover})`}}
+                  onClick={()=>setCurrent(m)}
+                >
+                  <div className="card-title">{m.title}</div>
+                </div>
+              ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
 
-      {/* MODAL */}
       {current && (
         <div className="modal">
-          <div className="modal-content">
-            <h1>{current.title}</h1>
-            <p>{current.story}</p>
-
-            <video
-              controls
-              autoPlay
-              src={API + "/stream/" + current.id}
-              onTimeUpdate={(e)=>{
-                let p = (e.target.currentTime / e.target.duration)*100;
-
-                fetch(API + "/progress", {
-                  method:"POST",
-                  headers:{"Content-Type":"application/json"},
-                  body:JSON.stringify({
-                    id: current.id,
-                    progress: p
-                  })
-                });
-              }}
-            />
-
-            <button onClick={()=>setCurrent(null)}>✖</button>
-          </div>
+          <video
+            controls
+            autoPlay
+            src={API + "/stream/" + current.id}
+          />
+          <button onClick={()=>setCurrent(null)}>✖</button>
         </div>
       )}
 
