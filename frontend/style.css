@@ -1,0 +1,23 @@
+body {
+  margin:0;
+  background:#141414;
+  color:white;
+}
+
+.nav {
+  padding:15px;
+  background:black;
+}
+
+.grid {
+  display:flex;
+  flex-wrap:wrap;
+}
+
+.card {
+  width:150px;
+  height:220px;
+  margin:10px;
+  background-size:cover;
+  cursor:pointer;
+}
