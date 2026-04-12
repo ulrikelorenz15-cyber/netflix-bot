@@ -1,11 +1,12 @@
 # ================================
-# 🎬 FINAL BOSS NETFLIX SYSTEM
+# 🎬 FINAL BOSS+ NETFLIX SYSTEM
 # ================================
 
 import os
 import json
 import requests
 import re
+import time
 from flask import Flask, request, render_template_string, redirect
 
 app = Flask(__name__)
@@ -13,6 +14,7 @@ app = Flask(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 DATA_FILE = "data.json"
+USER_FILE = "users.json"
 TMDB_KEY = os.getenv("TMDB_KEY")
 
 # ================================
@@ -27,11 +29,19 @@ def load_data():
 def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
+def load_users():
+    if os.path.exists(USER_FILE):
+        return json.load(open(USER_FILE))
+    return {}
+
+def save_users(data):
+    json.dump(data, open(USER_FILE, "w"))
+
 def get_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# AUTO COVER (TMDB)
+# AUTO COVER
 # ================================
 
 def get_poster(title):
@@ -58,10 +68,9 @@ def extract(text):
         return None
 
     story = "-"
-    if "STORY" in text:
-        s = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S)
-        if s:
-            story = s.group(1)
+    s = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S)
+    if s:
+        story = s.group(1)
 
     return {
         "title": t.group(1),
@@ -70,7 +79,31 @@ def extract(text):
     }
 
 # ================================
-# 🎬 HOME UI (ULTRA)
+# USER SYSTEM
+# ================================
+
+def get_user(uid):
+    users = load_users()
+    if uid not in users:
+        users[uid] = {"history": [], "name": f"User {uid}"}
+        save_users(users)
+    return users
+
+def update_continue(uid, movie_id):
+    users = load_users()
+    user = users.get(uid, {"history": []})
+
+    if movie_id in user["history"]:
+        user["history"].remove(movie_id)
+
+    user["history"].insert(0, movie_id)
+    user["history"] = user["history"][:10]
+
+    users[uid] = user
+    save_users(users)
+
+# ================================
+# 🎬 HOME
 # ================================
 
 @app.route("/")
@@ -81,78 +114,25 @@ def home():
 
     return render_template_string("""
     <html>
-    <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
     body {background:#141414;color:white;margin:0;font-family:sans-serif}
-
-    .nav {
-        position:fixed;
-        top:0;
-        width:100%;
-        background:rgba(0,0,0,0.8);
-        padding:10px;
-        z-index:10;
-    }
-
+    .nav {position:fixed;width:100%;background:#000;padding:10px;z-index:10}
     .nav a {margin-right:15px;color:white;text-decoration:none}
 
-    .hero {
-        height:70vh;
-        background-size:cover;
-        display:flex;
-        align-items:flex-end;
-        padding:20px;
-        font-size:30px;
-        font-weight:bold;
-    }
+    .hero {height:70vh;background-size:cover;display:flex;align-items:flex-end;padding:20px;font-size:30px}
 
     .row {display:flex;overflow-x:auto;padding:10px}
-
     .card {margin-right:10px;position:relative}
     .card img {width:140px;border-radius:8px}
 
-    .overlay {
-        position:absolute;
-        bottom:0;
-        width:100%;
-        background:rgba(0,0,0,0.7);
-        font-size:12px;
-        padding:5px;
-    }
+    .overlay {position:absolute;bottom:0;background:rgba(0,0,0,0.7);width:100%;font-size:12px;padding:5px}
 
-    .grid {
-        display:grid;
-        grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
-        gap:10px;
-        padding:10px;
-    }
+    .modal {display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:black;padding:20px}
 
-    .modal {
-        display:none;
-        position:fixed;
-        top:0;
-        left:0;
-        width:100%;
-        height:100%;
-        background:black;
-        z-index:20;
-        padding:20px;
-    }
-
-    button {
-        padding:10px;
-        margin:5px;
-        background:red;
-        color:white;
-        border:none;
-    }
-
+    button {padding:10px;background:red;color:white;border:none;margin:5px}
     </style>
-    </head>
-
-    <body>
 
     <div class="nav">
         <a href="/">🏠 Home</a>
@@ -175,19 +155,9 @@ def home():
     {% endfor %}
     </div>
 
-    <h2 style="padding:10px;">🎬 Alle Filme</h2>
-    <div class="grid">
-    {% for m in movies %}
-        <div class="card" onclick="openModal('{{m.id}}','{{m.title}}','{{m.story}}','{{m.poster}}')">
-            <img src="{{m.poster}}">
-            <div class="overlay">{{m.title}}</div>
-        </div>
-    {% endfor %}
-    </div>
-
     <div id="modal" class="modal">
         <h1 id="title"></h1>
-        <img id="img" style="width:200px;">
+        <img id="img" width="200">
         <p id="story"></p>
 
         <button onclick="play()">▶️ Play</button>
@@ -195,10 +165,10 @@ def home():
     </div>
 
     <script>
-    let currentId = null;
+    let currentId=null;
 
     function openModal(id,title,story,poster){
-        currentId = id;
+        currentId=id;
         document.getElementById("modal").style.display="block";
         document.getElementById("title").innerText=title;
         document.getElementById("story").innerText=story;
@@ -215,12 +185,11 @@ def home():
     }
     </script>
 
-    </body>
     </html>
     """, movies=movies, hero=hero)
 
 # ================================
-# 🎮 PLAY
+# ▶️ PLAY + CONTINUE
 # ================================
 
 @app.route("/play/<mid>")
@@ -231,16 +200,43 @@ def play(mid):
     m = next(x for x in data["movies"] if x["id"] == mid)
 
     if uid:
+        update_continue(uid, mid)
+
         requests.post(f"{URL}/sendVideo", json={
             "chat_id": uid,
             "video": m["file_id"],
             "caption": f"▶️ {m['title']}"
         })
 
-    return "▶️ Wird gesendet..."
+    return "▶️ Streaming gestartet..."
 
 # ================================
-# ⚙️ ADMIN PANEL
+# 👤 USER PROFILE
+# ================================
+
+@app.route("/user/<uid>")
+def user(uid):
+    users = load_users()
+    data = load_data()
+
+    history_ids = users.get(uid, {}).get("history", [])
+    history = [m for m in data["movies"] if m["id"] in history_ids]
+
+    return render_template_string("""
+    <h1>👤 Dein Profil</h1>
+
+    <h3>Continue Watching</h3>
+
+    {% for m in history %}
+        <div>
+            <img src="{{m.poster}}" width="100">
+            {{m.title}}
+        </div>
+    {% endfor %}
+    """, history=history)
+
+# ================================
+# ⚙️ ADMIN
 # ================================
 
 @app.route("/admin")
@@ -254,16 +250,14 @@ def admin():
         <div>
             <b>{{m.title}}</b><br>
             <img src="{{m.poster}}" width="100"><br>
-
-            <a href="/edit/{{m.id}}">✏️ Edit</a>
-            <a href="/delete/{{m.id}}">🗑 Delete</a>
-        </div>
-        <hr>
+            <a href="/edit/{{m.id}}">Edit</a>
+            <a href="/delete/{{m.id}}">Delete</a>
+        </div><hr>
     {% endfor %}
     """, data=data)
 
 # ================================
-# EDIT (COVER + TITLE)
+# EDIT
 # ================================
 
 @app.route("/edit/<mid>", methods=["GET","POST"])
@@ -280,9 +274,9 @@ def edit(mid):
 
     return render_template_string("""
     <form method="post">
-        Title: <input name="title" value="{{m.title}}"><br>
-        Poster URL: <input name="poster" value="{{m.poster}}"><br>
-        Story: <textarea name="story">{{m.story}}</textarea><br>
+        Title:<input name="title" value="{{m.title}}"><br>
+        Poster:<input name="poster" value="{{m.poster}}"><br>
+        Story:<textarea name="story">{{m.story}}</textarea><br>
         <button>Save</button>
     </form>
     """, m=m)
