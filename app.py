@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX FINAL CLEAN FIX
+# 🎬 NETFLIX REAL COVER SYSTEM
 # ================================
 
 import os
@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 TOKEN = os.getenv("BOT_TOKEN")
+TMDB_KEY = os.getenv("TMDB_KEY")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 DB = "netflix.db"
@@ -46,24 +47,42 @@ def init_db():
 init_db()
 
 # ================================
-# PARSER (FIXED)
+# 🎬 TMDB COVER
+# ================================
+
+def get_cover(title):
+    try:
+        r = requests.get(
+            "https://api.themoviedb.org/3/search/movie",
+            params={
+                "api_key": TMDB_KEY,
+                "query": title
+            }
+        ).json()
+
+        if r.get("results"):
+            poster_path = r["results"][0].get("poster_path")
+            if poster_path:
+                return "https://image.tmdb.org/t/p/w500" + poster_path
+    except:
+        pass
+
+    # fallback
+    return "https://placehold.co/300x450/141414/FFFFFF?text=" + title.replace(" ", "+")
+
+# ================================
+# PARSER
 # ================================
 
 def extract(msg):
     text = msg.get("caption","")
 
-    # 🎬 Titel korrekt erkennen
     match = re.search(r"🎬\s*(.*?)\s*\(", text)
-    if match:
-        title = match.group(1)
-    else:
-        title = "Film"
+    title = match.group(1) if match else "Film"
 
-    # Kategorie
     tags = re.findall(r"#(\w+)", text)
     category = tags[0] if tags else "Trending"
 
-    # Story
     story = "-"
     s = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S)
     if s:
@@ -81,8 +100,8 @@ def save(msg):
 
     title, category, story = extract(msg)
 
-    # ✅ STABILES COVER (KEIN ❓ MEHR)
-    poster = "https://placehold.co/300x450/141414/FFFFFF?text=" + title.replace(" ", "+")
+    # 🔥 echtes Cover
+    poster = get_cover(title)
 
     con = db()
     cur = con.cursor()
@@ -126,7 +145,6 @@ def api():
         "timestamp": r[7]
     } for r in rows]
 
-    # 🔥 Trending
     data.sort(key=lambda x: x["views"], reverse=True)
 
     return jsonify(data)
@@ -158,7 +176,7 @@ def play(id):
     return "OK"
 
 # ================================
-# UI (FINAL FIXED)
+# UI
 # ================================
 
 @app.route("/")
@@ -171,16 +189,13 @@ def home():
 <style>
 body {background:#141414;color:white;margin:0;font-family:sans-serif}
 
-/* NAV */
 .nav {
     position:fixed;
     width:100%;
     padding:15px;
     background:linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-    z-index:10;
 }
 
-/* HERO */
 .hero {
     height:60vh;
     display:flex;
@@ -190,14 +205,12 @@ body {background:#141414;color:white;margin:0;font-family:sans-serif}
     font-size:30px;
 }
 
-/* ROW */
 .row {
     display:flex;
     overflow-x:auto;
     padding:20px;
 }
 
-/* CARD */
 .card {
     margin-right:10px;
     position:relative;
@@ -214,7 +227,6 @@ body {background:#141414;color:white;margin:0;font-family:sans-serif}
     transform:scale(1.1);
 }
 
-/* OVERLAY */
 .overlay {
     position:absolute;
     bottom:0;
@@ -222,14 +234,12 @@ body {background:#141414;color:white;margin:0;font-family:sans-serif}
     background:rgba(0,0,0,0.8);
     opacity:0;
     padding:5px;
-    font-size:12px;
 }
 
 .card:hover .overlay {
     opacity:1;
 }
 
-/* MODAL */
 .modal {
     position:fixed;
     top:0;
@@ -239,7 +249,6 @@ body {background:#141414;color:white;margin:0;font-family:sans-serif}
     background:black;
     display:none;
     padding:20px;
-    z-index:20;
 }
 </style>
 
@@ -248,7 +257,6 @@ body {background:#141414;color:white;margin:0;font-family:sans-serif}
 <div class="nav">🎬 NETFLIX</div>
 
 <div id="hero" class="hero"></div>
-
 <div id="content"></div>
 
 <div id="modal" class="modal">
@@ -271,12 +279,10 @@ fetch("/api")
     if(data.length){
         document.getElementById("hero").style.backgroundImage =
             "url("+data[0].poster+")";
-
         document.getElementById("hero").innerHTML =
-            "<div style='font-size:32px'>" + data[0].title + "</div>";
+            "<div>"+data[0].title+"</div>";
     }
 
-    // Kategorien
     let grouped = {};
 
     data.forEach(m=>{
@@ -304,7 +310,7 @@ fetch("/api")
 
             card.onclick = ()=>{
                 current = m;
-                document.getElementById("modal").style.display = "block";
+                document.getElementById("modal").style.display="block";
                 document.getElementById("title").innerText = m.title;
                 document.getElementById("story").innerText = m.story;
             };
@@ -318,11 +324,11 @@ fetch("/api")
 });
 
 function closeModal(){
-    document.getElementById("modal").style.display = "none";
+    document.getElementById("modal").style.display="none";
 }
 
 function play(){
-    window.location = "/play/" + current.id + "?uid=" + uid;
+    window.location="/play/"+current.id+"?uid="+uid;
 }
 </script>
 
