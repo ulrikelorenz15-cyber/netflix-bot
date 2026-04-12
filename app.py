@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX GOD MODE SYSTEM
+# 🎬 NETFLIX FINAL GOD UI SYSTEM
 # ================================
 
 import os
@@ -10,14 +10,12 @@ import time
 from flask import Flask, request, render_template_string, redirect, session
 
 app = Flask(__name__)
-app.secret_key = "netflix_god"
+app.secret_key = "netflix_god_ui"
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
-TMDB_KEY = os.getenv("TMDB_KEY")
 
 DB = "netflix.db"
-
 LAST_COVER = {}
 
 # ================================
@@ -36,11 +34,12 @@ def init_db():
         id TEXT,
         type TEXT,
         title TEXT,
-        season TEXT,
-        episode TEXT,
+        season INTEGER,
+        episode INTEGER,
         story TEXT,
         file_id TEXT,
         poster TEXT,
+        progress INTEGER DEFAULT 0,
         timestamp REAL
     )
     """)
@@ -66,21 +65,19 @@ def extract(text):
 
     return {
         "title": title.group(1) if title else "Unknown",
-        "season": season.group(1) if season else None,
-        "episode": episode.group(1) if episode else None,
+        "season": int(season.group(1)) if season else None,
+        "episode": int(episode.group(1)) if episode else None,
         "story": story
     }
 
 # ================================
-# SAVE
+# SAVE CONTENT
 # ================================
 
 def save_content(msg):
     global LAST_COVER
-
     chat_id = msg["chat"]["id"]
 
-    # COVER SPEICHERN
     if "photo" in msg:
         LAST_COVER[chat_id] = msg["photo"][-1]["file_id"]
         return
@@ -92,19 +89,15 @@ def save_content(msg):
     caption = msg.get("caption","")
 
     info = extract(caption)
-
     content_type = "series" if info["season"] else "movie"
 
-    poster = LAST_COVER.get(chat_id)
-
-    if not poster:
-        poster = "https://dummyimage.com/300x450/000/fff&text=" + info["title"]
+    poster = LAST_COVER.get(chat_id, "https://dummyimage.com/300x450/000/fff")
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO content VALUES(?,?,?,?,?,?,?,?,?)
+    INSERT INTO content VALUES(?,?,?,?,?,?,?,?,?,?)
     """, (
         str(int(time.time())),
         content_type,
@@ -114,6 +107,7 @@ def save_content(msg):
         info["story"],
         video["file_id"],
         poster,
+        0,
         time.time()
     ))
 
@@ -138,7 +132,8 @@ def get_all():
         "episode": r[4],
         "story": r[5],
         "file_id": r[6],
-        "poster": r[7]
+        "poster": r[7],
+        "progress": r[8]
     } for r in rows]
 
 # ================================
@@ -153,7 +148,7 @@ def login():
     return "<form method='post'>ID:<input name='uid'><button>Login</button></form>"
 
 # ================================
-# HOME
+# HOME (NETFLIX UI)
 # ================================
 
 @app.route("/")
@@ -164,29 +159,73 @@ def home():
     data = get_all()
 
     movies = [x for x in data if x["type"]=="movie"]
-    series = list(set([x["title"] for x in data if x["type"]=="series"]))
+    series_titles = list(set([x["title"] for x in data if x["type"]=="series"]))
+
+    hero = movies[0] if movies else None
 
     return render_template_string("""
+    <html>
+    <meta name="viewport" content="width=device-width">
+
     <style>
-    body {background:#141414;color:white;font-family:sans-serif}
-    .row {display:flex;overflow-x:auto}
-    img {width:140px;margin:5px;border-radius:10px}
+    body {background:#141414;color:white;margin:0;font-family:sans-serif}
+
+    .hero {
+        height:70vh;
+        background-size:cover;
+        display:flex;
+        align-items:flex-end;
+        padding:20px;
+    }
+
+    .row {display:flex;overflow-x:auto;padding:15px}
+
+    .card {position:relative;margin-right:10px}
+    .card img {width:150px;border-radius:10px}
+
+    .card:hover {transform:scale(1.1)}
+
+    .overlay {
+        position:absolute;
+        bottom:0;
+        width:100%;
+        background:rgba(0,0,0,0.7);
+        font-size:12px;
+    }
+
+    .progress {
+        height:4px;
+        background:red;
+        width:{{m.progress}}%;
+    }
     </style>
+
+    {% if hero %}
+    <div class="hero" style="background-image:url('{{hero.poster}}')">
+        <h1>{{hero.title}}</h1>
+    </div>
+    {% endif %}
 
     <h2>🎬 Filme</h2>
     <div class="row">
     {% for m in movies %}
-        <a href="/details/{{m.id}}"><img src="{{m.poster}}"></a>
+        <a href="/details/{{m.id}}">
+            <div class="card">
+                <img src="{{m.poster}}">
+                <div class="overlay">{{m.title}}</div>
+                <div class="progress"></div>
+            </div>
+        </a>
     {% endfor %}
     </div>
 
     <h2>📺 Serien</h2>
     <div class="row">
     {% for s in series %}
-        <a href="/series/{{s}}">{{s}}</a><br>
+        <a href="/series/{{s}}">{{s}}</a>
     {% endfor %}
     </div>
-    """, movies=movies, series=series)
+    """, movies=movies, series=series_titles, hero=hero)
 
 # ================================
 # DETAILS
@@ -201,6 +240,7 @@ def details(id):
     <h1>{{m.title}}</h1>
     <img src="{{m.poster}}" width="200">
     <p>{{m.story}}</p>
+
     <a href="/play/{{m.id}}">▶️ Play</a>
     """, m=m)
 
@@ -211,7 +251,6 @@ def details(id):
 @app.route("/series/<title>")
 def series(title):
     data = get_all()
-
     eps = [x for x in data if x["title"]==title]
 
     return render_template_string("""
@@ -219,14 +258,14 @@ def series(title):
 
     {% for e in eps %}
         <div>
-            S{{e.season}} E{{e.episode}}
+            S{{e.season}}E{{e.episode}}
             <a href="/play/{{e.id}}">▶️</a>
         </div>
     {% endfor %}
     """, eps=eps, title=title)
 
 # ================================
-# PLAY
+# PLAY + AUTO NEXT
 # ================================
 
 @app.route("/play/<id>")
@@ -234,13 +273,27 @@ def play(id):
     uid = session.get("uid")
 
     data = get_all()
-    m = next(x for x in data if x["id"]==id)
+    current = next(x for x in data if x["id"]==id)
 
+    # Send video
     requests.post(f"{URL}/sendVideo", json={
         "chat_id": uid,
-        "video": m["file_id"],
-        "caption": m["title"]
+        "video": current["file_id"],
+        "caption": current["title"]
     })
+
+    # AUTO NEXT
+    if current["type"] == "series":
+        next_ep = next((x for x in data
+            if x["title"] == current["title"]
+            and x["season"] == current["season"]
+            and x["episode"] == current["episode"] + 1), None)
+
+        if next_ep:
+            requests.post(f"{URL}/sendMessage", json={
+                "chat_id": uid,
+                "text": f"➡️ Nächste Folge verfügbar: S{next_ep['season']}E{next_ep['episode']}"
+            })
 
     return redirect("/")
 
