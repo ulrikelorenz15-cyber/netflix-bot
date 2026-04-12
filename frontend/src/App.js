@@ -28,16 +28,11 @@ export default function App() {
   return (
     <div className="app">
 
-      {/* NAV */}
       <div className="nav">
         🎬 NETFLIX
-        <input
-          placeholder="🔍 Suche..."
-          onChange={(e)=>search(e.target.value)}
-        />
+        <input placeholder="🔍 Suche..." onChange={(e)=>search(e.target.value)} />
       </div>
 
-      {/* HERO */}
       {filtered[0] && (
         <div className="hero">
           <h1>{filtered[0].title}</h1>
@@ -45,25 +40,15 @@ export default function App() {
         </div>
       )}
 
-      {/* ROW */}
       <div className="row">
         {filtered.map(m => (
-          <div
-            key={m.id}
-            className="card"
-            onClick={()=>setCurrent(m)}
-          >
+          <div key={m.id} className="card" onClick={()=>setCurrent(m)}>
             <div className="card-title">{m.title}</div>
-
-            <div
-              className="progress"
-              style={{width: m.progress + "%"}}
-            ></div>
+            <div className="progress" style={{width: m.progress + "%"}}></div>
           </div>
         ))}
       </div>
 
-      {/* MODAL PLAYER */}
       {current && (
         <div className="modal">
           <div className="modal-content">
@@ -88,7 +73,7 @@ export default function App() {
               }}
             />
 
-            <button onClick={()=>setCurrent(null)}>❌ Schließen</button>
+            <button onClick={()=>setCurrent(null)}>❌</button>
           </div>
         </div>
       )}
