@@ -1,10 +1,11 @@
 # ================================
-# 🎬 NETFLIX BOT (HARD DEBUG MODE)
+# 🎬 NETFLIX BOT (FINAL FIXED CORE)
 # ================================
 
 import os
 import json
 import requests
+import re
 from flask import Flask, request
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -13,30 +14,14 @@ URL = f"https://api.telegram.org/bot{TOKEN}"
 DATA_FILE = "data.json"
 
 # ================================
-# DEBUG SEND (WICHTIG)
-# ================================
-
-def debug(chat_id, text):
-    print("DEBUG:", text)
-
-    try:
-        requests.post(f"{URL}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": f"🧠 DEBUG:\n{text}"
-        }, timeout=5)
-    except Exception as e:
-        print("DEBUG ERROR:", e)
-
-# ================================
-# SAFE SEND
+# UTILS
 # ================================
 
 def safe_post(method, payload):
     try:
-        print(f"[SEND] {method}")
         requests.post(f"{URL}/{method}", json=payload, timeout=5)
-    except Exception as e:
-        print("SEND ERROR:", e)
+    except:
+        pass
 
 # ================================
 # DATA
@@ -50,70 +35,121 @@ def load_data():
 def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
+def get_id(data):
+    return str(len(data["movies"]) + 1).zfill(4)
+
 # ================================
-# TEST DATA (IMMER DA)
+# 🧠 PERFECT PARSER (DEIN FORMAT)
 # ================================
 
-def ensure_data():
+def extract_movie_data(text):
+    if not text:
+        return None
+
+    # TITLE + YEAR
+    t = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", text)
+    if not t:
+        return None
+
+    title = t.group(1).strip()
+    year = t.group(2)
+
+    # RATING
+    rating = "-"
+    r = re.search(r"⭐\s*([0-9.]+)", text)
+    if r:
+        rating = r.group(1)
+
+    # RUNTIME
+    runtime = "-"
+    rt = re.search(r"⏱\s*([0-9]+\s*Min)", text)
+    if rt:
+        runtime = rt.group(1)
+
+    # DIRECTOR
+    director = "-"
+    dr = re.search(r"🎥\s*(.*?)\n", text)
+    if dr:
+        director = dr.group(1).strip()
+
+    # STORY
+    story = "-"
+    st = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━━━━━━━", text, re.S)
+    if st:
+        story = st.group(1).strip()
+
+    # GENRE
+    genres = re.findall(r"#(\w+)", text)
+    if not genres:
+        g = re.search(r"🔥.*?•(.*?)\n", text)
+        if g:
+            genres = [x.strip() for x in g.group(1).split("•")]
+
+    return {
+        "title": title,
+        "year": year,
+        "genre": genres[:2] if genres else ["Unknown"],
+        "runtime": runtime,
+        "director": director,
+        "rating": rating,
+        "story": story
+    }
+
+# ================================
+# SAVE MOVIE
+# ================================
+
+def save_movie(msg):
     data = load_data()
 
-    if not data["movies"]:
-        print("👉 Demo Daten geladen")
+    video = msg.get("video") or msg.get("document")
+    caption = msg.get("caption") or ""
 
-        data["movies"] = [{
-            "id": "0001",
-            "title": "Havoc",
-            "year": "2025",
-            "genre": ["Action", "Thriller"],
-            "rating": "7.4",
-            "runtime": "125 Min",
-            "story": "Test Film läuft korrekt",
-            "file_id": None,
-            "views": 0
-        }]
+    info = extract_movie_data(caption)
 
-        save_data(data)
+    if not info:
+        return None
 
-# ================================
-# HOME
-# ================================
+    # DUPLICATE CHECK
+    for m in data["movies"]:
+        if m["title"].lower() == info["title"].lower():
+            return m
 
-def show_home(chat_id):
-    debug(chat_id, "HOME wird geladen")
+    entry = {
+        "id": get_id(data),
+        **info,
+        "file_id": video["file_id"],
+        "views": 0
+    }
 
-    data = load_data()
+    data["movies"].append(entry)
+    save_data(data)
 
-    safe_post("sendMessage", {
-        "chat_id": chat_id,
-        "text": "🎬 HOME SCREEN AKTIV"
-    })
-
-    if data["movies"]:
-        m = data["movies"][0]
-
-        safe_post("sendMessage", {
-            "chat_id": chat_id,
-            "text": f"🎬 {m['title']}",
-            "reply_markup": {
-                "inline_keyboard": [[
-                    {"text": "▶️ TEST BUTTON", "callback_data": f"movie_{m['title']}"}
-                ]]
-            }
-        })
+    return entry
 
 # ================================
 # CARD
 # ================================
 
 def send_card(chat_id, m):
-    debug(chat_id, f"CARD: {m['title']}")
+    caption = f"""🎬 {m['title']} ({m['year']})
+🔥 4K • {' • '.join(m['genre'])}
+━━━━━━━━━━━━━━
+⭐ {m['rating']} • ⏱ {m['runtime']} • 🔞 FSK 16
+🎥 {m['director']}
+━━━━━━━━━━━━━━
+📖 STORY
+{m['story']}
+━━━━━━━━━━━━━━
+▶️ #{m['id']}
+━━━━━━━━━━━━━━
+{' '.join(['#'+g for g in m['genre']])}
+@LibraryOfLegends"""
 
-    safe_post("sendMessage", {
+    safe_post("sendVideo", {
         "chat_id": chat_id,
-        "text": f"""🎬 {m['title']}
-⭐ {m['rating']}
-
-SYSTEM OK"""
+        "video": m["file_id"],
+        "caption": caption
     })
 
 # ================================
@@ -126,44 +162,37 @@ app = Flask(__name__)
 def webhook():
     update = request.get_json()
 
-    print("========== UPDATE ==========")
-    print(update)
-    print("============================")
-
-    data = load_data()
-
-    # CALLBACK
-    if "callback_query" in update:
-        cb = update["callback_query"]["data"]
-        chat_id = update["callback_query"]["message"]["chat"]["id"]
-
-        debug(chat_id, f"CALLBACK: {cb}")
-
-        if cb.startswith("movie_"):
-            title = cb.replace("movie_", "")
-            m = next((x for x in data["movies"] if x["title"] == title), None)
-
-            if m:
-                send_card(chat_id, m)
-            else:
-                debug(chat_id, "FILM NICHT GEFUNDEN")
+    print("UPDATE:", update)
 
     # MESSAGE
     if "message" in update:
         msg = update["message"]
         chat_id = msg["chat"]["id"]
 
-        debug(chat_id, f"MESSAGE: {msg}")
-
+        # START
         if msg.get("text") == "/start":
-            debug(chat_id, "START COMMAND ERKANNT")
-            show_home(chat_id)
-
-        else:
             safe_post("sendMessage", {
                 "chat_id": chat_id,
-                "text": "❗ Unbekannter Befehl"
+                "text": "🔥 Bot ist bereit – sende einen Film"
             })
+
+        # 🔥 VIDEO HANDLER (FIX!)
+        if "video" in msg or "document" in msg:
+            entry = save_movie(msg)
+
+            if not entry:
+                safe_post("sendMessage", {
+                    "chat_id": chat_id,
+                    "text": "❌ Film konnte nicht erkannt werden"
+                })
+                return "ok"
+
+            safe_post("sendMessage", {
+                "chat_id": chat_id,
+                "text": f"✅ Gespeichert: {entry['title']}"
+            })
+
+            send_card(chat_id, entry)
 
     return "ok"
 
@@ -172,11 +201,8 @@ def webhook():
 # ================================
 
 if __name__ == "__main__":
-    print("🔥 HARD DEBUG BOT START")
+    print("🔥 FINAL FIXED BOT RUNNING")
 
-    ensure_data()
-
-    r = requests.get(f"{URL}/setWebhook?url={os.getenv('WEBHOOK_URL')}/webhook/{TOKEN}")
-    print("Webhook:", r.text)
+    requests.get(f"{URL}/setWebhook?url={os.getenv('WEBHOOK_URL')}/webhook/{TOKEN}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
