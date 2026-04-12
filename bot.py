@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTIMATE GOD MODE)
+# 🎬 NETFLIX BOT FINAL (NEXT LEVEL UI++)
 # ================================
 
 import os
@@ -11,7 +11,7 @@ from flask import Flask, request
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 CHANNEL = "-1003526259129"
-TMDB_KEY = os.getenv("TMDB_KEY")  # <-- NEU
+TMDB_KEY = os.getenv("TMDB_KEY")
 
 DATA_FILE = "data.json"
 
@@ -29,27 +29,28 @@ def safe_post(method, payload):
         pass
 
 # ================================
-# 🎬 TMDB POSTER (ECHT)
+# 🎬 POSTER (REAL)
 # ================================
 
 def get_poster(title):
     try:
         r = requests.get(
-            f"https://api.themoviedb.org/3/search/movie",
+            "https://api.themoviedb.org/3/search/movie",
             params={"api_key": TMDB_KEY, "query": title},
             timeout=5
         ).json()
 
-        if r["results"]:
+        if r.get("results"):
             poster = r["results"][0]["poster_path"]
-            return f"https://image.tmdb.org/t/p/w500{poster}"
+            if poster:
+                return f"https://image.tmdb.org/t/p/w500{poster}"
     except:
         pass
 
     return f"https://dummyimage.com/600x900/000/fff&text={title}"
 
 # ================================
-# 🧠 SERIES DETECTION
+# 🧠 SERIES DETECT
 # ================================
 
 def detect_series(title):
@@ -59,12 +60,11 @@ def detect_series(title):
     if "jurassic" in t: return "Jurassic"
     if "star trek" in t: return "Star Trek"
     if "godzilla" in t or "kong" in t: return "MonsterVerse"
-    if "avenger" in t or "marvel" in t: return "Marvel"
 
     return None
 
 # ================================
-# 🧠 ULTRA PARSER (ANTI FAIL)
+# 🧠 ULTRA PARSER
 # ================================
 
 def extract_movie_data(text):
@@ -73,7 +73,6 @@ def extract_movie_data(text):
 
     text = text.replace("\n", " ")
 
-    # TITLE + YEAR
     m = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", text)
     if not m:
         return None
@@ -81,49 +80,27 @@ def extract_movie_data(text):
     title = m.group(1).strip()
     year = m.group(2)
 
-    # RATING
-    rating = "-"
-    r = re.search(r"⭐\s*([0-9.]+)", text)
-    if r:
-        rating = r.group(1)
+    rating = re.search(r"⭐\s*([0-9.]+)", text)
+    runtime = re.search(r"⏱\s*([0-9]+\s*Min)", text)
+    director = re.search(r"🎥\s*(.*?)\s*━━━━━━━━", text)
+    story = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text)
 
-    # RUNTIME
-    runtime = "-"
-    rt = re.search(r"⏱\s*([0-9]+\s*Min)", text)
-    if rt:
-        runtime = rt.group(1)
-
-    # DIRECTOR
-    director = "-"
-    dr = re.search(r"🎥\s*(.*?)\s*━━━━━━━━", text)
-    if dr:
-        director = dr.group(1).strip()
-
-    # STORY
-    story = "-"
-    st = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text)
-    if st:
-        story = st.group(1).strip()
-
-    # GENRES
     genres = re.findall(r"#(\w+)", text)
+
     if not genres:
         g = re.search(r"🔥.*?•(.*?)━", text)
         if g:
             genres = [x.strip() for x in g.group(1).split("•")]
 
-    if not genres:
-        genres = ["Unknown"]
-
     return {
         "title": title,
         "year": year,
-        "genre": genres[:2],
-        "runtime": runtime,
-        "director": director,
-        "rating": rating,
-        "story": story,
-        "tags": genres,
+        "genre": genres or ["Unknown"],
+        "runtime": runtime.group(1) if runtime else "-",
+        "director": director.group(1) if director else "-",
+        "rating": rating.group(1) if rating else "-",
+        "story": story.group(1) if story else "-",
+        "tags": genres or ["Unknown"],
         "series": detect_series(title)
     }
 
@@ -152,11 +129,9 @@ def save_movie(msg):
     caption = msg.get("caption") or ""
 
     info = extract_movie_data(caption)
-
     if not info:
         return None
 
-    # DUPLICATE
     for m in data["movies"]:
         if m["title"].lower() == info["title"].lower():
             return m
@@ -173,7 +148,7 @@ def save_movie(msg):
     return entry
 
 # ================================
-# 📊 SCORE (NETFLIX STYLE)
+# 📊 SCORE
 # ================================
 
 def get_score(m):
@@ -183,7 +158,7 @@ def get_top_movies(data):
     return sorted(data["movies"], key=get_score, reverse=True)[:10]
 
 # ================================
-# 📂 STRUKTUR
+# 📂 STRUCTURE
 # ================================
 
 def get_categories(data):
@@ -248,7 +223,7 @@ def show_swipe(chat_id, movies, index=0):
     })
 
 # ================================
-# 🎬 FILM KARTE (DEIN DESIGN)
+# 🎬 CARD
 # ================================
 
 def send_card(chat_id, m):
@@ -284,7 +259,20 @@ def send_card(chat_id, m):
     })
 
 # ================================
-# 🏠 HOME (NETFLIX LEVEL)
+# ▶️ AUTOPLAY (SERIEN)
+# ================================
+
+def play_next(chat_id, current_id, data):
+    movies = data["movies"]
+
+    for i, m in enumerate(movies):
+        if m["id"] == current_id and i + 1 < len(movies):
+            next_movie = movies[i + 1]
+            send_card(chat_id, next_movie)
+            return
+
+# ================================
+# 🏠 HOME
 # ================================
 
 def show_home(chat_id):
@@ -292,7 +280,7 @@ def show_home(chat_id):
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 ULTIMATE NETFLIX"
+        "text": "🎬 Library of Legends\n🔥 NEXT LEVEL NETFLIX"
     })
 
     # HERO
@@ -367,14 +355,7 @@ def webhook():
 
         elif cb.startswith("play_"):
             mid = cb.split("_")[1]
-            m = next((x for x in data["movies"] if x["id"] == mid), None)
-
-            if m:
-                safe_post("sendVideo", {
-                    "chat_id": chat_id,
-                    "video": m["file_id"],
-                    "caption": f"▶️ {m['title']}"
-                })
+            play_next(chat_id, mid, data)
 
     if "message" in update:
         msg = update["message"]
