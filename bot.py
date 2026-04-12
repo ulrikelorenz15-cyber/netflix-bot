@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (MENU + UI FINAL)
+# 🎬 NETFLIX BOT FINAL (MENU + UI FINAL + ULTRA MATCH)
 # ================================
 
 import os
@@ -7,6 +7,7 @@ import json
 import requests
 from flask import Flask, request
 from openai import OpenAI
+from difflib import get_close_matches
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
@@ -38,6 +39,51 @@ def clean_title(raw):
     raw = raw.replace(".", " ")
     blacklist = ["1080p","720p","bluray","x264","x265","dvdrip","webdl"]
     return " ".join([w for w in raw.split() if w.lower() not in blacklist])
+
+# ================================
+# 🧠 NEW: FUZZY MATCH
+# ================================
+
+def fuzzy_match(title, data):
+    titles = [m["title"] for m in data["movies"]]
+    match = get_close_matches(title, titles, n=1, cutoff=0.6)
+    return match[0] if match else None
+
+# ================================
+# 🧠 NEW: AI DETECT
+# ================================
+
+def ai_detect_title(raw_text):
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{
+                "role": "user",
+                "content": f"Errate den Film Titel:\n{raw_text}\nNur Titel."
+            }],
+            temperature=0.3
+        )
+        return res.choices[0].message.content.strip()
+    except:
+        return None
+
+# ================================
+# 🧠 NEW: MULTI TRY
+# ================================
+
+def try_multiple_titles(title):
+    variants = [
+        title,
+        title.split("(")[0],
+        title.split("-")[0],
+        " ".join(title.split(" ")[:2])
+    ]
+
+    for t in variants:
+        movie = get_movie(t.strip())
+        if movie:
+            return movie
+    return None
 
 # ================================
 # MAIN MENU
@@ -207,7 +253,7 @@ def show_home(chat_id):
     show_series_row(chat_id, data)
 
 # ================================
-# CARD (DETAIL)
+# CARD
 # ================================
 
 def send_card(chat_id, movie, local):
@@ -231,7 +277,7 @@ def send_card(chat_id, movie, local):
     })
 
 # ================================
-# VIDEO
+# VIDEO (ULTRA MATCH ENGINE)
 # ================================
 
 def handle_video(msg):
@@ -239,16 +285,29 @@ def handle_video(msg):
     video = msg.get("video") or msg.get("document")
 
     raw = clean_title(msg.get("caption") or "")
-
     movie = None
 
+    # 1 LOCAL
     if raw:
         local = local_match(raw)
         if local:
-            movie = get_movie(local)
+            movie = try_multiple_titles(local)
 
-    if not movie:
-        movie = get_movie(raw)
+    # 2 NORMAL
+    if not movie and raw:
+        movie = try_multiple_titles(raw)
+
+    # 3 FUZZY (NEU)
+    if not movie and raw:
+        fuzzy = fuzzy_match(raw, data)
+        if fuzzy:
+            movie = get_movie(fuzzy)
+
+    # 4 AI (NEU)
+    if not movie and raw:
+        ai_title = ai_detect_title(raw)
+        if ai_title:
+            movie = try_multiple_titles(ai_title)
 
     if not movie:
         safe_post("sendMessage", {
@@ -267,6 +326,11 @@ def handle_video(msg):
 
     data["movies"].append(entry)
     save_data(data)
+
+    safe_post("sendMessage", {
+        "chat_id": msg["chat"]["id"],
+        "text": f"🧠 Erkannt: {movie['Title']}"
+    })
 
     send_card(msg["chat"]["id"], movie, entry)
     send_card(CHANNEL, movie, entry)
