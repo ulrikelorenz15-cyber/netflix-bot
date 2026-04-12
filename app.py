@@ -1,16 +1,15 @@
 # ================================
-# 🎬 BACKEND (FLASK API)
+# 🎬 FINAL CLEAN STREAM BACKEND
 # ================================
 
 import os
 import sqlite3
 import requests
+import re
 import time
 from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
@@ -34,7 +33,8 @@ def init_db():
         title TEXT,
         story TEXT,
         file_id TEXT,
-        progress INTEGER DEFAULT 0
+        views INTEGER,
+        progress INTEGER
     )
     """)
 
@@ -44,6 +44,24 @@ def init_db():
 init_db()
 
 # ================================
+# PARSER (FIXED)
+# ================================
+
+def extract_data(caption):
+    if not caption:
+        return "Film", "-"
+
+    # 🎬 Titel
+    title_match = re.search(r"🎬\s*(.*?)\s*\(", caption)
+    title = title_match.group(1) if title_match else "Film"
+
+    # 📖 Story
+    story_match = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", caption, re.S)
+    story = story_match.group(1).strip() if story_match else "-"
+
+    return title, story
+
+# ================================
 # SAVE FROM TELEGRAM
 # ================================
 
@@ -51,23 +69,27 @@ def save(msg):
     if "video" not in msg:
         return
 
-    title = msg.get("caption","Film").split("\\n")[0]
+    caption = msg.get("caption","")
+    title, story = extract_data(caption)
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO movies VALUES(?,?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?,?)
     """, (
         str(int(time.time())),
         title,
-        msg.get("caption",""),
+        story,
         msg["video"]["file_id"],
+        0,
         0
     ))
 
     con.commit()
     con.close()
+
+    print(f"✅ Saved: {title}")
 
 # ================================
 # TELEGRAM FILE URL
@@ -79,7 +101,7 @@ def get_file_url(file_id):
     return f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
 
 # ================================
-# STREAM
+# STREAM (ECHTER PLAYER)
 # ================================
 
 @app.route("/stream/<id>")
@@ -98,7 +120,8 @@ def stream(id):
     def generate():
         with requests.get(file_url, stream=True) as r:
             for chunk in r.iter_content(chunk_size=1024*1024):
-                yield chunk
+                if chunk:
+                    yield chunk
 
     return Response(generate(), content_type="video/mp4")
 
@@ -119,12 +142,13 @@ def movies():
             "id": r[0],
             "title": r[1],
             "story": r[2],
-            "progress": r[4]
+            "views": r[4],
+            "progress": r[5]
         } for r in rows
     ])
 
 # ================================
-# PROGRESS
+# PROGRESS SAVE
 # ================================
 
 @app.route("/progress", methods=["POST"])
@@ -145,6 +169,14 @@ def progress():
     return "ok"
 
 # ================================
+# HEALTH CHECK
+# ================================
+
+@app.route("/")
+def root():
+    return "✅ Backend läuft"
+
+# ================================
 # WEBHOOK
 # ================================
 
@@ -162,5 +194,5 @@ def webhook():
 # ================================
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT",10000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
