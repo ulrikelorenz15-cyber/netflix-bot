@@ -1,5 +1,5 @@
 # ================================
-# 🎬 ENTERPRISE MODE PLATFORM
+# 🎬 SAAS MODE (CLEAN PLATFORM)
 # ================================
 
 import os
@@ -7,13 +7,13 @@ import sqlite3
 import requests
 import re
 import time
-from flask import Flask, request, jsonify, Response, render_template_string, session, redirect
+from flask import Flask, request, jsonify, Response, session
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-app.secret_key = os.getenv("SECRET_KEY","secret")
+app.secret_key = os.getenv("SECRET_KEY", "secret")
 
 TOKEN = os.getenv("BOT_TOKEN")
 TMDB_KEY = os.getenv("TMDB_KEY")
@@ -32,7 +32,14 @@ def init_db():
     con = db()
     cur = con.cursor()
 
-    # movies
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT
+    )
+    """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS movies(
         id TEXT,
@@ -44,16 +51,6 @@ def init_db():
     )
     """)
 
-    # users
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS users(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT,
-        password TEXT
-    )
-    """)
-
-    # progress
     cur.execute("""
     CREATE TABLE IF NOT EXISTS progress(
         user TEXT,
@@ -62,7 +59,6 @@ def init_db():
     )
     """)
 
-    # watchlist
     cur.execute("""
     CREATE TABLE IF NOT EXISTS watchlist(
         user TEXT,
@@ -94,7 +90,7 @@ def get_cover(title):
     except:
         pass
 
-    return "https://placehold.co/300x450?text=" + title.replace(" ","+")
+    return "https://placehold.co/300x450?text=" + title
 
 # ================================
 # PARSER
@@ -144,17 +140,13 @@ def save(msg):
     con.close()
 
 # ================================
-# TELEGRAM FILE
+# STREAM
 # ================================
 
 def get_file(file_id):
     r = requests.get(f"{URL}/getFile?file_id={file_id}").json()
     path = r["result"]["file_path"]
     return f"https://api.telegram.org/file/bot{TOKEN}/{path}"
-
-# ================================
-# STREAM
-# ================================
 
 @app.route("/stream/<id>")
 def stream(id):
@@ -168,7 +160,7 @@ def stream(id):
 
     def generate():
         with requests.get(url, stream=True) as r:
-            for chunk in r.iter_content(chunk_size=1024*1024):
+            for chunk in r.iter_content(1024*1024):
                 yield chunk
 
     return Response(generate(), content_type="video/mp4")
@@ -176,6 +168,25 @@ def stream(id):
 # ================================
 # AUTH
 # ================================
+
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+
+    con = db()
+    cur = con.cursor()
+
+    try:
+        cur.execute(
+            "INSERT INTO users(username,password) VALUES(?,?)",
+            (data["username"], data["password"])
+        )
+        con.commit()
+    except:
+        return {"status":"exists"}
+
+    con.close()
+    return {"status":"ok"}
 
 @app.route("/login", methods=["POST"])
 def login():
@@ -196,23 +207,6 @@ def login():
         return {"status":"ok"}
 
     return {"status":"fail"}
-
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
-
-    con = db()
-    cur = con.cursor()
-
-    cur.execute(
-        "INSERT INTO users(username,password) VALUES(?,?)",
-        (data["username"], data["password"])
-    )
-
-    con.commit()
-    con.close()
-
-    return {"status":"ok"}
 
 # ================================
 # API
@@ -236,50 +230,47 @@ def movies():
         } for r in rows
     ])
 
-# ================================
-# UI
-# ================================
+@app.route("/progress", methods=["POST"])
+def progress():
+    user = session.get("user")
+    data = request.json
 
-@app.route("/")
-def home():
-    return render_template_string("""
-<!DOCTYPE html>
-<html>
-<meta name="viewport" content="width=device-width">
+    if not user:
+        return {"error":"not logged in"}
 
-<style>
-body {background:#141414;color:white;font-family:sans-serif;margin:0}
-.row{display:flex;overflow-x:auto;padding:20px}
-.card{width:160px;height:240px;margin-right:10px;background-size:cover}
-</style>
+    con = db()
+    cur = con.cursor()
 
-<body>
+    cur.execute(
+        "INSERT INTO progress VALUES(?,?,?)",
+        (user, data["id"], data["progress"])
+    )
 
-<h1 style="padding:10px">🎬 ENTERPRISE NETFLIX</h1>
-<div id="content"></div>
+    con.commit()
+    con.close()
 
-<script>
-fetch("/movies")
-.then(r=>r.json())
-.then(data=>{
-  let html="";
+    return {"status":"ok"}
 
-  data.forEach(m=>{
-    html += `
-      <div style="margin:20px">
-        <h3>${m.title}</h3>
-        <video width="300" controls src="/stream/${m.id}"></video>
-      </div>
-    `;
-  });
+@app.route("/watchlist", methods=["POST"])
+def watchlist():
+    user = session.get("user")
+    data = request.json
 
-  document.getElementById("content").innerHTML = html;
-});
-</script>
+    if not user:
+        return {"error":"not logged in"}
 
-</body>
-</html>
-""")
+    con = db()
+    cur = con.cursor()
+
+    cur.execute(
+        "INSERT INTO watchlist VALUES(?,?)",
+        (user, data["id"])
+    )
+
+    con.commit()
+    con.close()
+
+    return {"status":"ok"}
 
 # ================================
 # WEBHOOK
@@ -293,6 +284,14 @@ def webhook():
         save(update["message"])
 
     return "ok"
+
+# ================================
+# ROOT
+# ================================
+
+@app.route("/")
+def root():
+    return "🚀 SAAS MODE ACTIVE"
 
 # ================================
 # START
