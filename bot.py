@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (CLEAN + YOUR CARD DESIGN)
+# 🎬 NETFLIX BOT FINAL (STABLE OFFLINE SYSTEM)
 # ================================
 
 import os
@@ -11,6 +11,8 @@ from flask import Flask, request
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 CHANNEL = "-1003526259129"
+
+TMDB_KEY = os.getenv("TMDB_KEY")  # optional
 
 DATA_FILE = "data.json"
 SESSION = {}
@@ -25,6 +27,83 @@ def safe_post(method, payload):
     except:
         pass
 
+def clean_text(text):
+    return text.replace("\n", " ").strip() if text else ""
+
+# ================================
+# 🎬 REAL POSTER
+# ================================
+
+def get_poster(title):
+    if not TMDB_KEY:
+        return f"https://dummyimage.com/600x900/000/fff&text={title.replace(' ','+')}"
+
+    try:
+        r = requests.get(
+            "https://api.themoviedb.org/3/search/movie",
+            params={"api_key": TMDB_KEY, "query": title},
+            timeout=5
+        ).json()
+
+        if r.get("results"):
+            p = r["results"][0].get("poster_path")
+            if p:
+                return f"https://image.tmdb.org/t/p/w500{p}"
+    except:
+        pass
+
+    return f"https://dummyimage.com/600x900/000/fff&text={title.replace(' ','+')}"
+
+# ================================
+# 🧠 ULTRA PARSER (FIXED)
+# ================================
+
+def extract_movie(text):
+    text = clean_text(text)
+
+    # TITLE
+    title_match = re.search(r"🎬\s*(.*?)\s*\(", text)
+    title = title_match.group(1).strip() if title_match else None
+
+    # YEAR
+    year_match = re.search(r"\((\d{4})\)", text)
+    year = year_match.group(1) if year_match else ""
+
+    # GENRE
+    genres = re.findall(r"#(\w+)", text)
+
+    if not genres:
+        g = re.search(r"🔥.*?•(.*?)━", text)
+        if g:
+            genres = [x.strip() for x in g.group(1).split("•")]
+
+    if not genres:
+        genres = ["Unknown"]
+
+    # RUNTIME
+    runtime_match = re.search(r"⏱\s*([0-9]+ ?min)", text.lower())
+    runtime = runtime_match.group(1) if runtime_match else "-"
+
+    # DIRECTOR
+    director_match = re.search(r"🎥\s*(.*?)\s*━", text)
+    director = director_match.group(1).strip() if director_match else "-"
+
+    # RATING
+    rating_match = re.search(r"⭐\s*([0-9.]+)", text)
+    rating = rating_match.group(1) if rating_match else "-"
+
+    if not title:
+        return None
+
+    return {
+        "title": title,
+        "year": year,
+        "genre": genres[:2],
+        "runtime": runtime,
+        "director": director,
+        "rating": rating
+    }
+
 # ================================
 # DATA
 # ================================
@@ -37,78 +116,46 @@ def load_data():
 def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
-def get_next_id(data):
+def get_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# 🧠 PARSER (DEIN FORMAT 100%)
+# 🎬 SAVE MOVIE
 # ================================
 
-def extract_movie_data(text):
-    if not text:
+def save_movie(msg):
+    data = load_data()
+    video = msg.get("video") or msg.get("document")
+    caption = msg.get("caption") or ""
+
+    info = extract_movie(caption)
+
+    if not info:
         return None
 
-    # TITLE + YEAR
-    title = ""
-    year = ""
-    m = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", text)
-    if m:
-        title = m.group(1).strip()
-        year = m.group(2)
+    # DUPLICATE
+    for m in data["movies"]:
+        if m["title"].lower() == info["title"].lower():
+            return m
 
-    # GENRES (🔥 ZEILE)
-    genres = []
-    g = re.search(r"🔥.*?•(.*?)\n", text)
-    if g:
-        parts = g.group(1).split("•")
-        genres = [p.strip() for p in parts if p.strip()]
-
-    # RATING
-    rating = "-"
-    r = re.search(r"⭐\s*([0-9\.]+)", text)
-    if r:
-        rating = r.group(1)
-
-    # RUNTIME
-    runtime = "-"
-    rt = re.search(r"⏱\s*([0-9]+\s*Min)", text)
-    if rt:
-        runtime = rt.group(1)
-
-    # DIRECTOR
-    director = "-"
-    d = re.search(r"🎥\s*(.*?)\n", text)
-    if d:
-        director = d.group(1).strip()
-
-    # STORY
-    story = "-"
-    s = re.search(r"📖 STORY\s*(.*?)━━━━━━━━", text, re.DOTALL)
-    if s:
-        story = s.group(1).strip()
-
-    if not title:
-        return None
-
-    return {
-        "title": title,
-        "year": year,
-        "genre": genres[:2] if genres else ["Unknown"],
-        "runtime": runtime,
-        "director": director,
-        "rating": rating,
-        "story": story
+    entry = {
+        "id": get_id(data),
+        **info,
+        "file_id": video["file_id"],
+        "views": 0
     }
 
+    data["movies"].append(entry)
+    save_data(data)
+
+    return entry
+
 # ================================
-# 📊 SCORE SYSTEM
+# 📊 SCORE
 # ================================
 
-def get_score(m):
-    return m.get("views", 0) * 1.5
-
-def get_top_movies(data):
-    return sorted(data["movies"], key=get_score, reverse=True)[:10]
+def get_top(data):
+    return sorted(data["movies"], key=lambda x: x["views"], reverse=True)
 
 # ================================
 # 🎮 SWIPE UI
@@ -128,9 +175,10 @@ def show_swipe(chat_id, movies, i=0):
     if i < len(movies)-1:
         nav.append({"text": "➡️", "callback_data": f"swipe_{i+1}"})
 
-    safe_post("sendMessage", {
+    safe_post("sendPhoto", {
         "chat_id": chat_id,
-        "text": f"🎬 {m['title']}",
+        "photo": get_poster(m["title"]),
+        "caption": f"🎬 {m['title']}",
         "reply_markup": {
             "inline_keyboard": [
                 nav,
@@ -150,13 +198,15 @@ def send_card(chat_id, m):
 ⭐ {m.get('rating','-')} • ⏱ {m.get('runtime','-')} • 🔞 FSK 16
 🎥 {m.get('director','-')}
 ━━━━━━━━━━━━━━
-📖 STORY
-{m.get('story','-')}
-━━━━━━━━━━━━━━
 ▶️ #{m['id']}
 ━━━━━━━━━━━━━━
 #{' #'.join(m.get('genre',[]))} #Neu
 @LibraryOfLegends"""
+
+    safe_post("sendPhoto", {
+        "chat_id": chat_id,
+        "photo": get_poster(m["title"])
+    })
 
     safe_post("sendVideo", {
         "chat_id": chat_id,
@@ -165,50 +215,22 @@ def send_card(chat_id, m):
     })
 
 # ================================
-# 💾 SAVE MOVIE
-# ================================
-
-def save_movie(msg):
-    data = load_data()
-    video = msg.get("video") or msg.get("document")
-    caption = msg.get("caption") or ""
-
-    info = extract_movie_data(caption)
-    if not info:
-        return None
-
-    # DUPLICATE CHECK
-    for m in data["movies"]:
-        if m["title"].lower() == info["title"].lower():
-            return m
-
-    entry = {
-        "id": get_next_id(data),
-        **info,
-        "file_id": video["file_id"],
-        "views": 0
-    }
-
-    data["movies"].append(entry)
-    save_data(data)
-    return entry
-
-# ================================
 # HOME
 # ================================
 
 def show_home(chat_id):
     data = load_data()
+    top = get_top(data)
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 Clean Netflix System"
+        "text": "🎬 Library of Legends\n🔥 Netflix Style"
     })
 
-    show_swipe(chat_id, get_top_movies(data))
+    show_swipe(chat_id, top[:10])
 
 # ================================
-# VIDEO HANDLER
+# VIDEO
 # ================================
 
 def handle_video(msg):
@@ -217,7 +239,7 @@ def handle_video(msg):
     if not m:
         safe_post("sendMessage", {
             "chat_id": msg["chat"]["id"],
-            "text": "❌ Bitte dein Film-Template verwenden!"
+            "text": "❌ Fehler beim Erkennen"
         })
         return
 
@@ -251,6 +273,7 @@ def webhook():
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
             m = next((x for x in data["movies"] if x["title"] == title), None)
+
             if m:
                 m["views"] += 1
                 save_data(data)
