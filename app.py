@@ -1,5 +1,5 @@
 # ================================
-# 🎬 FINAL BOSS+ NETFLIX SYSTEM
+# 🎬 ULTIMATE NETFLIX SYSTEM
 # ================================
 
 import os
@@ -7,15 +7,17 @@ import json
 import requests
 import re
 import time
-from flask import Flask, request, render_template_string, redirect
+from flask import Flask, request, render_template_string, redirect, session
 
 app = Flask(__name__)
+app.secret_key = "netflix_secret"
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
+TMDB_KEY = os.getenv("TMDB_KEY")
+
 DATA_FILE = "data.json"
 USER_FILE = "users.json"
-TMDB_KEY = os.getenv("TMDB_KEY")
 
 # ================================
 # DATA
@@ -82,14 +84,10 @@ def extract(text):
 # USER SYSTEM
 # ================================
 
-def get_user(uid):
-    users = load_users()
-    if uid not in users:
-        users[uid] = {"history": [], "name": f"User {uid}"}
-        save_users(users)
-    return users
+def get_current_user():
+    return session.get("uid")
 
-def update_continue(uid, movie_id):
+def update_progress(uid, movie_id):
     users = load_users()
     user = users.get(uid, {"history": []})
 
@@ -103,13 +101,40 @@ def update_continue(uid, movie_id):
     save_users(users)
 
 # ================================
-# 🎬 HOME
+# LOGIN
+# ================================
+
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method == "POST":
+        uid = request.form["uid"]
+        session["uid"] = uid
+        return redirect("/")
+    return """
+    <form method="post">
+        Telegram ID:<input name="uid">
+        <button>Login</button>
+    </form>
+    """
+
+# ================================
+# HOME UI
 # ================================
 
 @app.route("/")
 def home():
+    uid = get_current_user()
+    if not uid:
+        return redirect("/login")
+
     data = load_data()
+    users = load_users()
+
     movies = data["movies"]
+    history_ids = users.get(uid, {}).get("history", [])
+
+    continue_movies = [m for m in movies if m["id"] in history_ids]
+
     hero = movies[0] if movies else None
 
     return render_template_string("""
@@ -118,26 +143,23 @@ def home():
 
     <style>
     body {background:#141414;color:white;margin:0;font-family:sans-serif}
-    .nav {position:fixed;width:100%;background:#000;padding:10px;z-index:10}
-    .nav a {margin-right:15px;color:white;text-decoration:none}
-
-    .hero {height:70vh;background-size:cover;display:flex;align-items:flex-end;padding:20px;font-size:30px}
-
+    .nav {position:fixed;width:100%;background:#000;padding:10px}
     .row {display:flex;overflow-x:auto;padding:10px}
     .card {margin-right:10px;position:relative}
     .card img {width:140px;border-radius:8px}
 
-    .overlay {position:absolute;bottom:0;background:rgba(0,0,0,0.7);width:100%;font-size:12px;padding:5px}
+    .progress {
+        position:absolute;
+        bottom:0;
+        height:5px;
+        background:red;
+        width:50%;
+    }
 
-    .modal {display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:black;padding:20px}
-
-    button {padding:10px;background:red;color:white;border:none;margin:5px}
+    .hero {height:60vh;background-size:cover;display:flex;align-items:flex-end;padding:20px}
     </style>
 
-    <div class="nav">
-        <a href="/">🏠 Home</a>
-        <a href="/admin">⚙️ Admin</a>
-    </div>
+    <div class="nav">👤 {{uid}}</div>
 
     {% if hero %}
     <div class="hero" style="background-image:url('{{hero.poster}}')">
@@ -145,62 +167,42 @@ def home():
     </div>
     {% endif %}
 
-    <h2 style="padding:10px;">🔥 Trending</h2>
+    <h3>▶️ Continue Watching</h3>
     <div class="row">
-    {% for m in movies[:10] %}
-        <div class="card" onclick="openModal('{{m.id}}','{{m.title}}','{{m.story}}','{{m.poster}}')">
+    {% for m in continue_movies %}
+        <div class="card">
             <img src="{{m.poster}}">
-            <div class="overlay">{{m.title}}</div>
+            <div class="progress"></div>
         </div>
     {% endfor %}
     </div>
 
-    <div id="modal" class="modal">
-        <h1 id="title"></h1>
-        <img id="img" width="200">
-        <p id="story"></p>
-
-        <button onclick="play()">▶️ Play</button>
-        <button onclick="closeModal()">❌ Close</button>
+    <h3>🔥 Trending</h3>
+    <div class="row">
+    {% for m in movies %}
+        <div class="card">
+            <a href="/play/{{m.id}}">
+                <img src="{{m.poster}}">
+            </a>
+        </div>
+    {% endfor %}
     </div>
 
-    <script>
-    let currentId=null;
-
-    function openModal(id,title,story,poster){
-        currentId=id;
-        document.getElementById("modal").style.display="block";
-        document.getElementById("title").innerText=title;
-        document.getElementById("story").innerText=story;
-        document.getElementById("img").src=poster;
-    }
-
-    function closeModal(){
-        document.getElementById("modal").style.display="none";
-    }
-
-    function play(){
-        let uid = prompt("Deine Telegram ID:");
-        window.location="/play/"+currentId+"?uid="+uid;
-    }
-    </script>
-
-    </html>
-    """, movies=movies, hero=hero)
+    """, movies=movies, hero=hero, continue_movies=continue_movies, uid=uid)
 
 # ================================
-# ▶️ PLAY + CONTINUE
+# PLAY
 # ================================
 
 @app.route("/play/<mid>")
 def play(mid):
-    uid = request.args.get("uid")
+    uid = get_current_user()
     data = load_data()
 
     m = next(x for x in data["movies"] if x["id"] == mid)
 
     if uid:
-        update_continue(uid, mid)
+        update_progress(uid, mid)
 
         requests.post(f"{URL}/sendVideo", json={
             "chat_id": uid,
@@ -208,57 +210,25 @@ def play(mid):
             "caption": f"▶️ {m['title']}"
         })
 
-    return "▶️ Streaming gestartet..."
+    return redirect("/")
 
 # ================================
-# 👤 USER PROFILE
-# ================================
-
-@app.route("/user/<uid>")
-def user(uid):
-    users = load_users()
-    data = load_data()
-
-    history_ids = users.get(uid, {}).get("history", [])
-    history = [m for m in data["movies"] if m["id"] in history_ids]
-
-    return render_template_string("""
-    <h1>👤 Dein Profil</h1>
-
-    <h3>Continue Watching</h3>
-
-    {% for m in history %}
-        <div>
-            <img src="{{m.poster}}" width="100">
-            {{m.title}}
-        </div>
-    {% endfor %}
-    """, history=history)
-
-# ================================
-# ⚙️ ADMIN
+# ADMIN
 # ================================
 
 @app.route("/admin")
 def admin():
     data = load_data()
-
     return render_template_string("""
-    <h1>Admin Panel</h1>
-
+    <h1>Admin</h1>
     {% for m in data.movies %}
         <div>
-            <b>{{m.title}}</b><br>
-            <img src="{{m.poster}}" width="100"><br>
+            {{m.title}}
             <a href="/edit/{{m.id}}">Edit</a>
             <a href="/delete/{{m.id}}">Delete</a>
-        </div><hr>
+        </div>
     {% endfor %}
     """, data=data)
-
-# ================================
-# EDIT
-# ================================
 
 @app.route("/edit/<mid>", methods=["GET","POST"])
 def edit(mid):
@@ -274,16 +244,12 @@ def edit(mid):
 
     return render_template_string("""
     <form method="post">
-        Title:<input name="title" value="{{m.title}}"><br>
-        Poster:<input name="poster" value="{{m.poster}}"><br>
-        Story:<textarea name="story">{{m.story}}</textarea><br>
+        Title:<input name="title" value="{{m.title}}">
+        Poster:<input name="poster" value="{{m.poster}}">
+        <textarea name="story">{{m.story}}</textarea>
         <button>Save</button>
     </form>
     """, m=m)
-
-# ================================
-# DELETE
-# ================================
 
 @app.route("/delete/<mid>")
 def delete(mid):
@@ -307,18 +273,14 @@ def webhook():
             data = load_data()
             info = extract(msg.get("caption",""))
 
-            if not info:
-                return "ok"
-
-            entry = {
-                "id": get_id(data),
-                **info,
-                "file_id": msg["video"]["file_id"],
-                "poster": get_poster(info["title"])
-            }
-
-            data["movies"].append(entry)
-            save_data(data)
+            if info:
+                data["movies"].append({
+                    "id": get_id(data),
+                    **info,
+                    "file_id": msg["video"]["file_id"],
+                    "poster": get_poster(info["title"])
+                })
+                save_data(data)
 
     return "ok"
 
