@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX FINAL SYSTEM (REAL APP MODE)
+# 🎬 NETFLIX ULTIMATE SYSTEM
 # ================================
 
 import os
@@ -7,7 +7,7 @@ import json
 import requests
 import re
 import time
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, redirect
 
 app = Flask(__name__)
 
@@ -16,7 +16,7 @@ URL = f"https://api.telegram.org/bot{TOKEN}"
 DATA_FILE = "data.json"
 TMDB_KEY = os.getenv("TMDB_KEY")
 
-USER_STATE = {}
+USER_PROGRESS = {}
 
 # ================================
 # DATA
@@ -25,13 +25,13 @@ USER_STATE = {}
 def load_data():
     if os.path.exists(DATA_FILE):
         return json.load(open(DATA_FILE))
-    return {"movies": []}
+    return {"movies": [], "series": []}
 
 def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
-def get_id(data):
-    return str(len(data["movies"]) + 1).zfill(4)
+def get_id(arr):
+    return str(len(arr) + 1).zfill(4)
 
 # ================================
 # TMDB COVER
@@ -52,7 +52,7 @@ def get_poster(title):
     return "https://dummyimage.com/300x450/000/fff&text=No+Cover"
 
 # ================================
-# PARSER
+# PARSER (FILM)
 # ================================
 
 def safe(p, t):
@@ -64,37 +64,13 @@ def extract(text):
     if not t:
         return None
 
-    genres = re.findall(r"#(\w+)", text)
-    genres = [g for g in genres if not g.isdigit()] or ["Action"]
-
     return {
         "title": t.group(1),
         "year": t.group(2),
         "rating": safe(r"⭐\s*([0-9.]+)", text),
         "runtime": safe(r"⏱\s*([0-9]+\s*Min)", text),
-        "genre": genres[:2],
         "story": safe(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text)
     }
-
-# ================================
-# SCORE
-# ================================
-
-def score(m):
-    return m["views"] * 2 + (5 - (time.time() - m["timestamp"]) / 86400)
-
-# ================================
-# USER STATE
-# ================================
-
-def update_continue(uid, mid):
-    USER_STATE.setdefault(uid, [])
-
-    if mid in USER_STATE[uid]:
-        USER_STATE[uid].remove(mid)
-
-    USER_STATE[uid].insert(0, mid)
-    USER_STATE[uid] = USER_STATE[uid][:5]
 
 # ================================
 # HOME UI
@@ -102,8 +78,7 @@ def update_continue(uid, mid):
 
 @app.route("/")
 def home():
-    data = load_data()["movies"]
-    trending = sorted(data, key=score, reverse=True)[:10]
+    data = load_data()
 
     return render_template_string("""
     <html>
@@ -111,77 +86,90 @@ def home():
     <style>
     body {background:#141414;color:white;font-family:sans-serif;margin:0}
     .row {display:flex;overflow-x:auto;padding:20px}
-    .card {margin-right:10px}
     .card img {width:150px;border-radius:8px}
     </style>
     </head>
     <body>
 
-    <h2 style="padding:20px;">🔥 Trending</h2>
-
+    <h2 style="padding:20px;">🎬 Filme</h2>
     <div class="row">
-    {% for m in trending %}
+    {% for m in data.movies %}
         <a href="/movie/{{m.id}}">
-            <div class="card">
-                <img src="{{m.poster}}">
-            </div>
+            <img src="{{m.poster}}">
+        </a>
+    {% endfor %}
+    </div>
+
+    <h2 style="padding:20px;">📺 Serien</h2>
+    <div class="row">
+    {% for s in data.series %}
+        <a href="/series/{{s.id}}">
+            <img src="{{s.poster}}">
         </a>
     {% endfor %}
     </div>
 
     </body>
     </html>
-    """, trending=trending)
+    """, data=data)
 
 # ================================
-# DETAIL
+# FILM DETAIL
 # ================================
 
 @app.route("/movie/<mid>")
 def movie(mid):
-    data = load_data()["movies"]
-    m = next((x for x in data if x["id"] == mid), None)
+    data = load_data()
+    m = next((x for x in data["movies"] if x["id"] == mid), None)
 
     return render_template_string("""
-    <html>
-    <head>
-    <style>
-    body {background:#141414;color:white;font-family:sans-serif;padding:20px}
-    img {width:200px;border-radius:10px}
-    .btn {background:red;padding:10px 20px;color:white;text-decoration:none;border-radius:5px}
-    </style>
-    </head>
-    <body>
-
+    <h1>{{m.title}}</h1>
     <img src="{{m.poster}}">
-    <h1>{{m.title}} ({{m.year}})</h1>
-
-    <p>⭐ {{m.rating}} • ⏱ {{m.runtime}}</p>
-    <p>{{m.genre}}</p>
-
-    <h3>📖 STORY</h3>
     <p>{{m.story}}</p>
 
-    <br>
-
-    <a class="btn" href="/play/{{m.id}}">▶️ Play</a>
-    <a class="btn" href="/edit/{{m.id}}">✏️ Edit</a>
-    <a class="btn" href="/delete/{{m.id}}">🗑 Delete</a>
-
-    </body>
-    </html>
+    <a href="/play/movie/{{m.id}}">▶️ Play</a>
+    <a href="/edit/movie/{{m.id}}">✏️ Edit</a>
     """, m=m)
 
 # ================================
-# PLAY (USER BASED)
+# SERIES DETAIL
 # ================================
 
-@app.route("/play/<mid>")
-def play(mid):
-    uid = request.args.get("uid")
+@app.route("/series/<sid>")
+def series(sid):
+    data = load_data()
+    s = next((x for x in data["series"] if x["id"] == sid), None)
 
-    data = load_data()["movies"]
-    m = next((x for x in data if x["id"] == mid), None)
+    return render_template_string("""
+    <h1>{{s.title}}</h1>
+    <img src="{{s.poster}}">
+
+    {% for season in s.seasons %}
+        <h3>Season {{season.number}}</h3>
+
+        {% for ep in season.episodes %}
+            <div>
+                Episode {{ep.number}}
+                <a href="/play/series/{{s.id}}/{{season.number}}/{{ep.number}}">
+                    ▶️ Play
+                </a>
+            </div>
+        {% endfor %}
+    {% endfor %}
+
+    <a href="/edit/series/{{s.id}}">✏️ Edit</a>
+    """, s=s)
+
+# ================================
+# PLAY FILM
+# ================================
+
+@app.route("/play/movie/<mid>")
+def play_movie(mid):
+    uid = request.args.get("uid")
+    data = load_data()
+
+    m = next((x for x in data["movies"] if x["id"] == mid), None)
 
     if m and uid:
         requests.post(f"{URL}/sendVideo", json={
@@ -190,46 +178,74 @@ def play(mid):
             "caption": f"▶️ {m['title']}"
         })
 
-        m["views"] += 1
-        save_data({"movies": data})
-
-    return "▶️ Wird abgespielt..."
+    return "Playing..."
 
 # ================================
-# EDIT
+# PLAY SERIES (AUTO NEXT)
 # ================================
 
-@app.route("/edit/<mid>", methods=["GET","POST"])
-def edit(mid):
+@app.route("/play/series/<sid>/<season>/<episode>")
+def play_series(sid, season, episode):
+    uid = request.args.get("uid")
     data = load_data()
-    m = next((x for x in data["movies"] if x["id"] == mid), None)
+
+    s = next((x for x in data["series"] if x["id"] == sid), None)
+
+    season = int(season)
+    episode = int(episode)
+
+    ep = s["seasons"][season-1]["episodes"][episode-1]
+
+    requests.post(f"{URL}/sendVideo", json={
+        "chat_id": uid,
+        "video": ep["file_id"],
+        "caption": f"▶️ {s['title']} S{season}E{episode}"
+    })
+
+    # SAVE PROGRESS
+    USER_PROGRESS[uid] = (sid, season, episode)
+
+    # AUTO NEXT
+    try:
+        next_ep = s["seasons"][season-1]["episodes"][episode]
+        requests.post(f"{URL}/sendMessage", json={
+            "chat_id": uid,
+            "text": f"➡️ Next Episode verfügbar"
+        })
+    except:
+        pass
+
+    return "Playing..."
+
+# ================================
+# EDIT (MIT COVER!)
+# ================================
+
+@app.route("/edit/<type>/<id>", methods=["GET","POST"])
+def edit(type, id):
+    data = load_data()
+
+    arr = data[type+"s"]
+    item = next((x for x in arr if x["id"] == id), None)
 
     if request.method == "POST":
-        m["title"] = request.form["title"]
-        m["story"] = request.form["story"]
+        item["title"] = request.form["title"]
+        item["poster"] = request.form["poster"]  # 🔥 COVER EDIT
+        item["story"] = request.form["story"]
         save_data(data)
+        return redirect("/")
 
     return render_template_string("""
     <form method="post">
-        <input name="title" value="{{m.title}}"><br>
-        <textarea name="story">{{m.story}}</textarea><br>
+        Title: <input name="title" value="{{item.title}}"><br>
+        Poster URL: <input name="poster" value="{{item.poster}}"><br>
+        Story: <textarea name="story">{{item.story}}</textarea><br>
         <button>Save</button>
     </form>
-    """, m=m)
+    """, item=item)
 
 # ================================
-# DELETE
-# ================================
-
-@app.route("/delete/<mid>")
-def delete(mid):
-    data = load_data()
-    data["movies"] = [m for m in data["movies"] if m["id"] != mid]
-    save_data(data)
-    return "Deleted"
-
-# ================================
-# WEBHOOK
+# WEBHOOK (UPLOAD)
 # ================================
 
 @app.route("/webhook", methods=["POST"])
@@ -248,11 +264,9 @@ def webhook():
                 return "ok"
 
             entry = {
-                "id": get_id(data),
+                "id": get_id(data["movies"]),
                 **info,
                 "file_id": msg["video"]["file_id"],
-                "views": 0,
-                "timestamp": time.time(),
                 "poster": get_poster(info["title"])
             }
 
