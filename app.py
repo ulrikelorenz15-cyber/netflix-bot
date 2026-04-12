@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX CLOUD SYSTEM (FINAL FIXED)
+# 🎬 ULTRA NETFLIX SYSTEM (FINAL)
 # ================================
 
 import os
@@ -10,7 +10,7 @@ import time
 from flask import Flask, request, render_template_string, redirect, session
 
 app = Flask(__name__)
-app.secret_key = "netflix_final"
+app.secret_key = "ultra_netflix"
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
@@ -19,7 +19,7 @@ TMDB_KEY = os.getenv("TMDB_KEY")
 DB = "netflix.db"
 
 # ================================
-# DATABASE
+# DB
 # ================================
 
 def db():
@@ -81,11 +81,11 @@ def extract(text):
     return t.group(1), story
 
 # ================================
-# SAVE MOVIE (FIXED COVER)
+# SAVE MOVIE
 # ================================
 
 def save_movie(msg):
-    caption = msg.get("caption", "")
+    caption = msg.get("caption","")
     video = msg.get("video") or msg.get("document")
 
     parsed = extract(caption)
@@ -96,7 +96,7 @@ def save_movie(msg):
 
     poster = get_tmdb(title)
     if not poster:
-        poster = "https://dummyimage.com/300x450/000/fff&text=" + title.replace(" ", "+")
+        poster = "https://dummyimage.com/300x450/000/fff&text=" + title.replace(" ","+")
 
     con = db()
     cur = con.cursor()
@@ -159,8 +159,8 @@ def login():
         return redirect("/")
 
     return """
-    <h2>Login</h2>
-    <form method="post">
+    <h2 style="color:white;background:#141414;padding:20px">Login</h2>
+    <form method="post" style="padding:20px">
         Telegram ID:<br>
         <input name="uid"><br><br>
         <button>Login</button>
@@ -168,7 +168,7 @@ def login():
     """
 
 # ================================
-# HOME UI (FIXED)
+# HOME (ULTRA UI)
 # ================================
 
 @app.route("/")
@@ -189,34 +189,81 @@ def home():
     body {background:#141414;color:white;margin:0;font-family:sans-serif}
 
     .nav {
+        position:fixed;
+        width:100%;
+        padding:15px;
+        background:linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+        z-index:10;
         display:flex;
         justify-content:space-between;
-        padding:10px;
-        background:#000;
+    }
+
+    .nav a {
+        color:white;
+        text-decoration:none;
+        margin-left:15px;
+    }
+
+    .hero {
+        height:75vh;
+        background-size:cover;
+        display:flex;
+        align-items:flex-end;
+        padding:30px;
+    }
+
+    .hero::after {
+        content:"";
+        position:absolute;
+        width:100%;
+        height:200px;
+        bottom:0;
+        background:linear-gradient(to top,#141414,transparent);
     }
 
     .row {
         display:flex;
         overflow-x:auto;
-        padding:10px;
-    }
-
-    img {
-        width:140px;
-        border-radius:8px;
-        margin-right:10px;
-    }
-
-    .hero {
-        height:50vh;
-        background-size:cover;
         padding:20px;
     }
+
+    .card {
+        margin-right:10px;
+        transition:0.3s;
+        position:relative;
+    }
+
+    .card img {
+        width:150px;
+        border-radius:10px;
+    }
+
+    .card:hover {
+        transform:scale(1.2);
+    }
+
+    .overlay {
+        position:absolute;
+        bottom:0;
+        width:100%;
+        background:rgba(0,0,0,0.7);
+        font-size:12px;
+        padding:5px;
+        opacity:0;
+    }
+
+    .card:hover .overlay {
+        opacity:1;
+    }
+
+    h2 {padding-left:20px}
     </style>
 
     <div class="nav">
-        <div>🎬 Netflix Clone</div>
-        <div><a href="/admin" style="color:white">⚙️ Admin</a></div>
+        <div>🎬 NETFLIX</div>
+        <div>
+            <a href="/admin">Admin</a>
+        </div>
     </div>
 
     {% if hero %}
@@ -225,16 +272,31 @@ def home():
     </div>
     {% endif %}
 
-    <h3 style="padding:10px;">🔥 Trending</h3>
+    <h2>🔥 Trending</h2>
     <div class="row">
     {% for m in top %}
         <a href="/play/{{m.id}}">
-            <img src="{{m.poster}}">
+            <div class="card">
+                <img src="{{m.poster}}">
+                <div class="overlay">{{m.title}}</div>
+            </div>
         </a>
     {% endfor %}
     </div>
 
-    """, top=top, hero=hero)
+    <h2>🎬 Alle Filme</h2>
+    <div class="row">
+    {% for m in movies %}
+        <a href="/play/{{m.id}}">
+            <div class="card">
+                <img src="{{m.poster}}">
+                <div class="overlay">{{m.title}}</div>
+            </div>
+        </a>
+    {% endfor %}
+    </div>
+
+    """, movies=movies, top=top, hero=hero)
 
 # ================================
 # PLAY
@@ -263,7 +325,7 @@ def play(mid):
     return redirect("/")
 
 # ================================
-# ADMIN PANEL
+# ADMIN
 # ================================
 
 @app.route("/admin")
@@ -271,17 +333,15 @@ def admin():
     movies = get_movies()
 
     return render_template_string("""
-    <h1>⚙️ Admin Panel</h1>
+    <h1>Admin Panel</h1>
 
     {% for m in movies %}
         <div>
             <b>{{m.title}}</b><br>
             <img src="{{m.poster}}" width="120"><br>
-
-            <a href="/edit/{{m.id}}">✏️ Edit</a>
-            <a href="/delete/{{m.id}}">🗑 Delete</a>
-        </div>
-        <hr>
+            <a href="/edit/{{m.id}}">Edit</a>
+            <a href="/delete/{{m.id}}">Delete</a>
+        </div><hr>
     {% endfor %}
     """, movies=movies)
 
@@ -314,7 +374,7 @@ def edit(mid):
     return render_template_string("""
     <form method="post">
         Title:<br><input name="title" value="{{m[1]}}"><br><br>
-        Poster URL:<br><input name="poster" value="{{m[4]}}"><br><br>
+        Poster:<br><input name="poster" value="{{m[4]}}"><br><br>
         Story:<br><textarea name="story">{{m[2]}}</textarea><br><br>
         <button>Save</button>
     </form>
