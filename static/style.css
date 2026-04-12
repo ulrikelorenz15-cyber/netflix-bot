@@ -1,0 +1,62 @@
+body {
+    background: #141414;
+    color: white;
+    font-family: Arial;
+}
+
+h2 {
+    margin-left: 20px;
+}
+
+.row {
+    display: flex;
+    overflow-x: auto;
+    padding: 20px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 180px);
+    gap: 15px;
+    padding: 20px;
+}
+
+.card {
+    position: relative;
+    transition: 0.3s;
+}
+
+.card img {
+    width: 180px;
+    border-radius: 8px;
+}
+
+.card:hover {
+    transform: scale(1.2);
+    z-index: 2;
+}
+
+.preview {
+    position: absolute;
+    bottom: 0;
+    background: rgba(0,0,0,0.8);
+    width: 100%;
+    padding: 10px;
+    display: none;
+}
+
+.card:hover .preview {
+    display: block;
+}
+
+#hero {
+    height: 400px;
+    background-size: cover;
+    display: flex;
+    align-items: end;
+    padding: 30px;
+}
+
+.hidden {
+    display: none;
+}
