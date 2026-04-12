@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTIMATE OFFLINE NETFLIX SYSTEM)
+# 🎬 NETFLIX BOT FINAL (ULTIMATE OFFLINE NETFLIX SYSTEM + AI UPGRADE)
 # ================================
 
 import os
@@ -19,7 +19,6 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 DATA_FILE = "data.json"
 USERS_FILE = "users.json"
 
-CACHE = {}
 SESSION = {}
 
 # ================================
@@ -43,7 +42,46 @@ def clean_title(raw):
     return " ".join([w for w in raw.split() if w.lower() not in blacklist])
 
 # ================================
-# 🧠 AUTO DB BUILDER (NEU)
+# 🧠 AI GENRE
+# ================================
+
+def ai_detect_genre(title):
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{
+                "role": "user",
+                "content": f"Genres für Film: {title}. Nur 2 Genres."
+            }],
+            temperature=0.3
+        )
+        return [g.strip() for g in res.choices[0].message.content.split(",")]
+    except:
+        return ["Unknown"]
+
+# ================================
+# 🎬 POSTER
+# ================================
+
+def generate_poster(title):
+    return f"https://image.pollinations.ai/prompt/{title}+movie+poster"
+
+# ================================
+# 🎞 MARVEL PHASE
+# ================================
+
+def detect_marvel_phase(title):
+    t = title.lower()
+    if "avengers" in t or "iron man" in t:
+        return "Phase 1"
+    if "ultron" in t:
+        return "Phase 2"
+    if "infinity" in t or "endgame" in t:
+        return "Phase 3"
+    return None
+
+# ================================
+# 🧠 AUTO DB BUILDER (FIXED)
 # ================================
 
 def extract_movie_data(text):
@@ -52,21 +90,27 @@ def extract_movie_data(text):
 
     text = text.replace("\n", " ")
 
-    # 🎬 TITLE
-    title = ""
-    if "🎬" in text:
-        title = text.split("🎬")[1]
-    else:
-        title = text
-
-    # YEAR
+    # TITLE + YEAR
+    title = "Unknown"
     year = ""
-    y = re.search(r"\((\d{4})\)", title)
-    if y:
-        year = y.group(1)
-        title = title.split("(")[0]
 
-    title = title.strip()
+    m = re.search(r"🎬\s*(.*?)\s*\((\d{4})?\)", text)
+    if m:
+        title = m.group(1).strip()
+        year = m.group(2) or ""
+    else:
+        title = text.split(" ")[0]
+
+    # GENRE
+    genres = re.findall(r"#(\w+)", text)
+
+    if not genres:
+        g = re.search(r"🔥.*?•(.*?)━", text)
+        if g:
+            genres = [x.strip() for x in g.group(1).split("•")]
+
+    if not genres:
+        genres = ai_detect_genre(title)
 
     # RUNTIME
     runtime = "-"
@@ -80,17 +124,13 @@ def extract_movie_data(text):
     if dr:
         director = dr.group(1).strip()
 
-    # GENRE
-    genres = re.findall(r"#(\w+)", text)
-    if not genres:
-        genres = ["Unknown"]
-
     return {
         "title": title,
         "year": year,
         "genre": genres[:2],
         "runtime": runtime,
-        "director": director
+        "director": director,
+        "rating": "-"
     }
 
 def save_movie_from_post(msg):
@@ -99,7 +139,6 @@ def save_movie_from_post(msg):
     caption = msg.get("caption") or ""
 
     info = extract_movie_data(caption)
-
     if not info or not info["title"]:
         return None
 
@@ -115,8 +154,10 @@ def save_movie_from_post(msg):
         "genre": info["genre"],
         "runtime": info["runtime"],
         "director": info["director"],
+        "rating": info["rating"],
         "file_id": video["file_id"],
-        "views": 0
+        "views": 0,
+        "phase": detect_marvel_phase(info["title"])
     }
 
     data["movies"].append(entry)
@@ -125,64 +166,12 @@ def save_movie_from_post(msg):
     return entry
 
 # ================================
-# 🧠 USER SYSTEM
-# ================================
-
-def load_users():
-    if os.path.exists(USERS_FILE):
-        return json.load(open(USERS_FILE))
-    return {}
-
-def save_users(users):
-    json.dump(users, open(USERS_FILE, "w"))
-
-def get_user(uid):
-    users = load_users()
-    if str(uid) not in users:
-        users[str(uid)] = {
-            "watching": [],
-            "history": [],
-            "favorites": []
-        }
-        save_users(users)
-    return users[str(uid)]
-
-def update_continue(uid, movie_id):
-    users = load_users()
-    user = get_user(uid)
-
-    if movie_id in user["watching"]:
-        user["watching"].remove(movie_id)
-
-    user["watching"].insert(0, movie_id)
-    user["watching"] = user["watching"][:5]
-
-    if movie_id not in user["history"]:
-        user["history"].append(movie_id)
-
-    users[str(uid)] = user
-    save_users(users)
-
-def add_favorite(uid, movie_id):
-    users = load_users()
-    user = get_user(uid)
-
-    if movie_id not in user["favorites"]:
-        user["favorites"].append(movie_id)
-
-    users[str(uid)] = user
-    save_users(users)
-
-# ================================
 # DATA
 # ================================
 
 def load_data():
     if os.path.exists(DATA_FILE):
-        try:
-            return json.load(open(DATA_FILE))
-        except:
-            return {"movies": []}
+        return json.load(open(DATA_FILE))
     return {"movies": []}
 
 def save_data(data):
@@ -192,52 +181,14 @@ def get_next_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# MATCH SYSTEM
+# 📊 SCORE SYSTEM
 # ================================
 
-def match_movie(raw, data):
-    raw = raw.lower()
-
-    for m in data["movies"]:
-        if raw in m["title"].lower():
-            return m
-
-    titles = [m["title"] for m in data["movies"]]
-    match = get_close_matches(raw, titles, n=1, cutoff=0.5)
-
-    if match:
-        return next((x for x in data["movies"] if x["title"] == match[0]), None)
-
-    return None
-
-# ================================
-# TRENDING
-# ================================
+def get_score(m):
+    return m.get("views", 0) * 1.5 + len(m.get("genre", [])) * 2
 
 def get_top_movies(data):
-    return sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True)[:10]
-
-# ================================
-# RECOMMENDATION
-# ================================
-
-def get_recommendations(uid, data):
-    user = get_user(uid)
-    genres = []
-
-    for mid in user["history"]:
-        m = next((x for x in data["movies"] if x["id"] == mid), None)
-        if m:
-            genres += m.get("genre", [])
-
-    scored = []
-    for m in data["movies"]:
-        score = sum(2 for g in m.get("genre", []) if g in genres)
-        score += m.get("views", 0) * 0.2
-        scored.append((score, m))
-
-    scored.sort(reverse=True)
-    return [m for _, m in scored[:10]]
+    return sorted(data["movies"], key=get_score, reverse=True)[:10]
 
 # ================================
 # UI
@@ -263,31 +214,31 @@ def show_row(chat_id, title, movies):
     })
 
 # ================================
-# CARD
+# 🎬 CARD (UPGRADED)
 # ================================
 
 def send_card(chat_id, movie):
+    phase = f"\n🧬 {movie['phase']}" if movie.get("phase") else ""
+
     caption = f"""🎬 {movie['title'].upper()} ({movie.get('year','')})
 🔥 4K • {' • '.join(movie.get('genre',[]))}
 ━━━━━━━━━━━━━━
 ⭐ {movie.get('rating','-')} • ⏱ {movie.get('runtime','-')}
-🎥 {movie.get('director','-')}
+🎥 {movie.get('director','-')}{phase}
 ━━━━━━━━━━━━━━
 ▶️ #{movie['id']}
 ━━━━━━━━━━━━━━
 @LibraryOfLegends"""
 
+    safe_post("sendPhoto", {
+        "chat_id": chat_id,
+        "photo": generate_poster(movie["title"])
+    })
+
     safe_post("sendVideo", {
         "chat_id": chat_id,
         "video": movie["file_id"],
-        "caption": caption,
-        "reply_markup": {
-            "inline_keyboard": [
-                [{"text": "▶️ Starten", "callback_data": f"play_{movie['id']}"}],
-                [{"text": "⭐ Favorit", "callback_data": f"fav_{movie['id']}"}],
-                [{"text": "🏠 Home", "callback_data": "home"}]
-            ]
-        }
+        "caption": caption
     })
 
 # ================================
@@ -296,23 +247,17 @@ def send_card(chat_id, movie):
 
 def show_home(chat_id):
     data = load_data()
-    user = get_user(chat_id)
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 Dein Netflix"
+        "text": "🎬 Library of Legends\n🔥 Netflix System"
     })
 
-    if user["watching"]:
-        movies = [m for m in data["movies"] if m["id"] in user["watching"]]
-        show_row(chat_id, "▶️ Weiter schauen", movies)
-
     show_row(chat_id, "🔥 Trending", get_top_movies(data))
-    show_row(chat_id, "🧠 Für dich", get_recommendations(chat_id, data))
     show_row(chat_id, "🆕 Neu", list(reversed(data["movies"]))[:10])
 
 # ================================
-# VIDEO (UPDATED)
+# VIDEO
 # ================================
 
 def handle_video(msg):
@@ -321,7 +266,7 @@ def handle_video(msg):
     if not entry:
         safe_post("sendMessage", {
             "chat_id": msg["chat"]["id"],
-            "text": "❌ Konnte Film nicht erkennen"
+            "text": "❌ Fehler beim Erkennen"
         })
         return
 
@@ -351,17 +296,12 @@ def webhook():
         if cb == "home":
             show_home(chat_id)
 
-        elif cb.startswith("play_"):
-            mid = cb.split("_")[1]
-            update_continue(chat_id, mid)
-
-        elif cb.startswith("fav_"):
-            add_favorite(chat_id, cb.split("_")[1])
-
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
             m = next((x for x in data["movies"] if x["title"] == title), None)
             if m:
+                m["views"] += 1
+                save_data(data)
                 send_card(chat_id, m)
 
     if "message" in update:
