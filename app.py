@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX SYSTEM (AUTO COVER PERFECT)
+# 🎬 NETFLIX ULTRA UI SYSTEM
 # ================================
 
 import os
@@ -7,8 +7,7 @@ import json
 import requests
 import re
 import time
-from flask import Flask, request, jsonify, render_template_string, redirect
-from difflib import get_close_matches
+from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
@@ -30,59 +29,29 @@ def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
 def get_id(arr):
-    return str(len(arr) + 1).zfill(4)
+    return str(len(arr)+1).zfill(4)
 
 # ================================
-# 🧠 AUTO COVER SYSTEM
+# AUTO COVER
 # ================================
 
-def clean_title(title):
-    title = title.replace(".", " ")
-    blacklist = ["1080p","720p","bluray","x264","x265","webdl"]
-    return " ".join([w for w in title.split() if w.lower() not in blacklist])
-
-def search_tmdb(title, is_series=False):
+def get_poster(title):
     try:
-        title = clean_title(title)
-
-        endpoint = "tv" if is_series else "movie"
-
         r = requests.get(
-            f"https://api.themoviedb.org/3/search/{endpoint}",
+            "https://api.themoviedb.org/3/search/movie",
             params={"api_key": TMDB_KEY, "query": title}
         ).json()
 
         if r["results"]:
-            return r["results"][0]["poster_path"]
-
+            return "https://image.tmdb.org/t/p/w500" + r["results"][0]["poster_path"]
     except:
         pass
 
-    return None
-
-def get_best_poster(title, is_series=False):
-    poster = search_tmdb(title, is_series)
-
-    if poster:
-        return "https://image.tmdb.org/t/p/w500" + poster
-
-    # 🔥 Fallback 1: shorter title
-    short = " ".join(title.split()[:2])
-    poster = search_tmdb(short, is_series)
-
-    if poster:
-        return "https://image.tmdb.org/t/p/w500" + poster
-
-    # 🔥 Fallback 2: default
-    return "https://dummyimage.com/300x450/000/fff&text=" + title.replace(" ","+")
+    return "https://dummyimage.com/300x450/000/fff&text=No+Cover"
 
 # ================================
 # PARSER
 # ================================
-
-def safe(p, t):
-    m = re.search(p, t, re.S)
-    return m.group(1).strip() if m else "-"
 
 def extract(text):
     t = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", text)
@@ -92,86 +61,188 @@ def extract(text):
     return {
         "title": t.group(1),
         "year": t.group(2),
-        "rating": safe(r"⭐\s*([0-9.]+)", text),
-        "runtime": safe(r"⏱\s*([0-9]+\s*Min)", text),
-        "story": safe(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text)
+        "story": re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S).group(1) if "STORY" in text else "-"
     }
 
 # ================================
-# UI
+# 🎬 HOME (ULTRA UI)
 # ================================
 
 @app.route("/")
 def home():
     data = load_data()
 
+    movies = data["movies"]
+    hero = movies[0] if movies else None
+
     return render_template_string("""
     <html>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
     <style>
-    body {background:#141414;color:white;font-family:sans-serif}
-    .row {display:flex;overflow-x:auto;padding:20px}
-    img {width:150px;border-radius:8px;margin-right:10px}
+    body {
+        background:#141414;
+        color:white;
+        font-family:sans-serif;
+        margin:0;
+    }
+
+    /* NAV */
+    .nav {
+        position:fixed;
+        top:0;
+        width:100%;
+        background:rgba(0,0,0,0.8);
+        padding:10px;
+        z-index:10;
+    }
+
+    .nav a {
+        margin-right:15px;
+        color:white;
+        text-decoration:none;
+        font-weight:bold;
+    }
+
+    /* HERO */
+    .hero {
+        height:70vh;
+        background-size:cover;
+        display:flex;
+        align-items:flex-end;
+        padding:20px;
+        font-size:30px;
+        font-weight:bold;
+    }
+
+    /* ROW */
+    .row {
+        display:flex;
+        overflow-x:auto;
+        padding:10px;
+    }
+
+    /* CARD */
+    .card {
+        position:relative;
+        margin-right:10px;
+        transition:0.3s;
+    }
+
+    .card img {
+        width:140px;
+        border-radius:8px;
+    }
+
+    .card:hover {
+        transform:scale(1.2);
+    }
+
+    .overlay {
+        position:absolute;
+        bottom:0;
+        width:100%;
+        background:rgba(0,0,0,0.7);
+        font-size:12px;
+        padding:5px;
+    }
+
+    /* GRID */
+    .grid {
+        display:grid;
+        grid-template-columns:repeat(auto-fill, minmax(120px,1fr));
+        gap:10px;
+        padding:10px;
+    }
+
+    /* MODAL */
+    .modal {
+        display:none;
+        position:fixed;
+        top:0;
+        left:0;
+        width:100%;
+        height:100%;
+        background:black;
+        z-index:20;
+        padding:20px;
+    }
+
     </style>
+    </head>
 
-    <h2>🎬 Filme</h2>
+    <body>
+
+    <!-- NAV -->
+    <div class="nav">
+        <a href="#">🏠 Home</a>
+        <a href="#movies">🎬 Filme</a>
+    </div>
+
+    <!-- HERO -->
+    {% if hero %}
+    <div class="hero" style="background-image:url('{{hero.poster}}')">
+        {{hero.title}}
+    </div>
+    {% endif %}
+
+    <!-- TRENDING -->
+    <h2 style="padding:10px;">🔥 Trending</h2>
     <div class="row">
-    {% for m in data.movies %}
-        <a href="/movie/{{m.id}}">
+    {% for m in movies[:10] %}
+        <div class="card" onclick="openModal('{{m.title}}','{{m.story}}','{{m.poster}}','{{m.id}}')">
             <img src="{{m.poster}}">
-        </a>
+            <div class="overlay">{{m.title}}</div>
+        </div>
     {% endfor %}
     </div>
 
-    <h2>📺 Serien</h2>
-    <div class="row">
-    {% for s in data.series %}
-        <img src="{{s.poster}}">
+    <!-- GRID -->
+    <h2 id="movies" style="padding:10px;">🎬 Alle Filme</h2>
+    <div class="grid">
+    {% for m in movies %}
+        <div class="card" onclick="openModal('{{m.title}}','{{m.story}}','{{m.poster}}','{{m.id}}')">
+            <img src="{{m.poster}}">
+            <div class="overlay">{{m.title}}</div>
+        </div>
     {% endfor %}
     </div>
-    """, data=data)
 
-# ================================
-# DETAIL
-# ================================
+    <!-- MODAL -->
+    <div id="modal" class="modal">
+        <h1 id="m_title"></h1>
+        <img id="m_img" style="width:200px;">
+        <p id="m_story"></p>
 
-@app.route("/movie/<mid>")
-def movie(mid):
-    data = load_data()
-    m = next(x for x in data["movies"] if x["id"] == mid)
+        <button onclick="play()">▶️ Play</button>
+        <button onclick="closeModal()">❌ Close</button>
+    </div>
 
-    return render_template_string("""
-    <h1>{{m.title}}</h1>
-    <img src="{{m.poster}}">
-    <p>{{m.story}}</p>
+    <script>
+    let currentId = null;
 
-    <a href="/play/{{m.id}}">▶️ Play</a>
-    <a href="/edit/{{m.id}}">✏️ Edit</a>
-    """, m=m)
+    function openModal(title, story, poster, id){
+        document.getElementById("modal").style.display="block";
+        document.getElementById("m_title").innerText=title;
+        document.getElementById("m_story").innerText=story;
+        document.getElementById("m_img").src=poster;
+        currentId = id;
+    }
 
-# ================================
-# EDIT (COVER MANUELL)
-# ================================
+    function closeModal(){
+        document.getElementById("modal").style.display="none";
+    }
 
-@app.route("/edit/<mid>", methods=["GET","POST"])
-def edit(mid):
-    data = load_data()
-    m = next(x for x in data["movies"] if x["id"] == mid)
+    function play(){
+        let uid = prompt("Deine Telegram ID:");
+        window.location = "/play/"+currentId+"?uid="+uid;
+    }
+    </script>
 
-    if request.method == "POST":
-        m["title"] = request.form["title"]
-        m["poster"] = request.form["poster"] or get_best_poster(m["title"])
-        m["story"] = request.form["story"]
-        save_data(data)
-        return redirect("/")
-
-    return render_template_string("""
-    <form method="post">
-        Title: <input name="title" value="{{m.title}}"><br>
-        Poster URL: <input name="poster" value="{{m.poster}}"><br>
-        Story: <textarea name="story">{{m.story}}</textarea><br>
-        <button>Save</button>
-    </form>
-    """, m=m)
+    </body>
+    </html>
+    """, movies=movies, hero=hero)
 
 # ================================
 # PLAY
@@ -191,10 +262,10 @@ def play(mid):
             "caption": f"▶️ {m['title']}"
         })
 
-    return "Playing..."
+    return "▶️ Wird abgespielt..."
 
 # ================================
-# WEBHOOK (AUTO COVER!)
+# WEBHOOK
 # ================================
 
 @app.route("/webhook", methods=["POST"])
@@ -203,7 +274,6 @@ def webhook():
 
     if "message" in update:
         msg = update["message"]
-        chat_id = msg["chat"]["id"]
 
         if "video" in msg:
             data = load_data()
@@ -216,16 +286,11 @@ def webhook():
                 "id": get_id(data["movies"]),
                 **info,
                 "file_id": msg["video"]["file_id"],
-                "poster": get_best_poster(info["title"])  # 🔥 AUTO COVER
+                "poster": get_poster(info["title"])
             }
 
             data["movies"].append(entry)
             save_data(data)
-
-            requests.post(f"{URL}/sendMessage", json={
-                "chat_id": chat_id,
-                "text": f"🎬 {info['title']} + Cover geladen ✅"
-            })
 
     return "ok"
 
