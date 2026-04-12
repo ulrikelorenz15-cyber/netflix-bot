@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX FINAL UI + PLAYER
+# 🎬 NETFLIX UPGRADE UI FINAL
 # ================================
 
 import os
@@ -33,7 +33,6 @@ def init_db():
         title TEXT,
         story TEXT,
         file_id TEXT,
-        views INTEGER,
         progress INTEGER
     )
     """)
@@ -52,9 +51,9 @@ def extract_data(caption):
         return "Film", "-"
 
     title_match = re.search(r"🎬\s*(.*?)\s*\(", caption)
-    title = title_match.group(1) if title_match else caption.split("\n")[0]
+    title = title_match.group(1) if title_match else caption.split("\\n")[0]
 
-    story_match = re.search(r"STORY\s*(.*)", caption, re.S)
+    story_match = re.search(r"STORY\\s*(.*)", caption, re.S)
     story = story_match.group(1).strip()[:300] if story_match else "-"
 
     return title.strip(), story.strip()
@@ -67,20 +66,18 @@ def save(msg):
     if "video" not in msg:
         return
 
-    caption = msg.get("caption","")
-    title, story = extract_data(caption)
+    title, story = extract_data(msg.get("caption",""))
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO movies VALUES(?,?,?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?)
     """, (
         str(int(time.time())),
         title,
         story,
         msg["video"]["file_id"],
-        0,
         0
     ))
 
@@ -135,7 +132,7 @@ def movies():
             "id": r[0],
             "title": r[1],
             "story": r[2],
-            "progress": r[5]
+            "progress": r[4]
         } for r in rows
     ])
 
@@ -161,7 +158,7 @@ def progress():
     return "ok"
 
 # ================================
-# UI (NETFLIX STYLE FINAL)
+# UI (UPGRADE)
 # ================================
 
 @app.route("/")
@@ -176,12 +173,12 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
 /* HERO */
 .hero {
-    height:60vh;
+    height:65vh;
     display:flex;
     align-items:end;
-    padding:30px;
-    background:#222;
-    font-size:30px;
+    padding:40px;
+    background:linear-gradient(to top, black, transparent), #222;
+    font-size:40px;
 }
 
 /* ROW */
@@ -193,17 +190,23 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
 /* CARD */
 .card {
-    margin-right:10px;
-    min-width:150px;
+    margin-right:12px;
+    min-width:140px;
+    height:200px;
     background:#222;
-    padding:15px;
-    cursor:pointer;
+    border-radius:10px;
     position:relative;
+    cursor:pointer;
     transition:0.3s;
+    display:flex;
+    align-items:end;
+    padding:10px;
+    font-size:12px;
 }
 
 .card:hover {
-    transform:scale(1.1);
+    transform:scale(1.15);
+    z-index:5;
 }
 
 /* PROGRESS */
@@ -237,7 +240,10 @@ video {
 
 <div id="hero" class="hero"></div>
 
-<h2 style="padding-left:20px">🔥 Trending</h2>
+<h2 style="padding-left:20px">▶️ Continue Watching</h2>
+<div id="continue" class="row"></div>
+
+<h2 style="padding-left:20px">🔥 Alle Filme</h2>
 <div id="row" class="row"></div>
 
 <div id="modal" class="modal">
@@ -248,19 +254,16 @@ video {
 </div>
 
 <script>
-let DATA = [];
-let current = null;
-
 fetch("/movies")
 .then(r=>r.json())
 .then(data=>{
-    DATA = data;
 
     if(data.length){
         document.getElementById("hero").innerText = data[0].title;
     }
 
     let row = document.getElementById("row");
+    let cont = document.getElementById("continue");
 
     data.forEach(m=>{
         let card = document.createElement("div");
@@ -273,8 +276,6 @@ fetch("/movies")
         card.appendChild(p);
 
         card.onclick = ()=>{
-            current = m;
-
             document.getElementById("modal").style.display="block";
             document.getElementById("title").innerText = m.title;
             document.getElementById("story").innerText = m.story;
@@ -283,7 +284,7 @@ fetch("/movies")
             video.src = "/stream/" + m.id;
 
             video.ontimeupdate = ()=>{
-                let percent = (video.currentTime / video.duration) * 100;
+                let percent = (video.currentTime / video.duration)*100;
 
                 fetch("/progress", {
                     method:"POST",
@@ -297,6 +298,10 @@ fetch("/movies")
         };
 
         row.appendChild(card);
+
+        if(m.progress > 5 && m.progress < 95){
+            cont.appendChild(card.cloneNode(true));
+        }
     });
 });
 
