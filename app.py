@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX FINAL SYSTEM (RENDER READY)
+# 🎬 ULTRA UI PRO MAX SYSTEM
 # ================================
 
 import os
@@ -88,7 +88,7 @@ def extract_data(caption):
     return title.strip(), story.strip(), category
 
 # ================================
-# SAVE TELEGRAM
+# SAVE
 # ================================
 
 def save(msg):
@@ -195,7 +195,7 @@ def progress():
     return "ok"
 
 # ================================
-# 🎬 NETFLIX UI (DIRECT ON RENDER)
+# 🎬 ULTRA UI
 # ================================
 
 @app.route("/")
@@ -210,9 +210,17 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
 /* NAV */
 .nav {
+  display:flex;
+  justify-content:space-between;
   padding:15px;
   background:black;
-  font-weight:bold;
+}
+
+.nav input {
+  background:#222;
+  border:none;
+  color:white;
+  padding:5px;
 }
 
 /* HERO */
@@ -233,35 +241,48 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
 /* CARD */
 .card {
-  min-width:150px;
-  height:220px;
+  width:180px;
+  height:260px;
   margin-right:10px;
-  background-size:cover;
-  border-radius:10px;
   position:relative;
+  border-radius:10px;
+  overflow:hidden;
   cursor:pointer;
   transition:0.3s;
 }
 
 .card:hover {
-  transform:scale(1.2);
+  transform:scale(1.3);
+}
+
+/* VIDEO PREVIEW */
+.preview {
+  position:absolute;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  opacity:0;
+}
+
+.card:hover .preview {
+  opacity:1;
+}
+
+/* COVER */
+.cover {
+  position:absolute;
+  width:100%;
+  height:100%;
+  background-size:cover;
 }
 
 /* TITLE */
-.card-title {
+.title {
   position:absolute;
   bottom:0;
   padding:10px;
   background:linear-gradient(to top, black, transparent);
   width:100%;
-}
-
-/* PROGRESS */
-.progress {
-  height:4px;
-  background:red;
-  position:absolute;
-  bottom:0;
 }
 
 /* MODAL */
@@ -272,7 +293,6 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
   height:100%;
   background:black;
   display:none;
-  padding:20px;
 }
 
 video {
@@ -282,69 +302,84 @@ video {
 
 <body>
 
-<div class="nav">🎬 NETFLIX</div>
+<div class="nav">
+  <div>🎬 NETFLIX</div>
+  <input placeholder="Suche..." oninput="search(this.value)">
+</div>
 
 <div id="hero" class="hero"></div>
 
-<h2 style="padding-left:20px">🔥 Filme</h2>
-<div id="row" class="row"></div>
+<div id="content"></div>
 
 <div id="modal" class="modal">
-  <h1 id="title"></h1>
-  <p id="story"></p>
   <video id="video" controls autoplay></video>
   <button onclick="closeModal()">✖</button>
 </div>
 
 <script>
+let DATA=[];
+
 fetch("/movies")
 .then(r=>r.json())
 .then(data=>{
+  DATA=data;
+  render(data);
+});
+
+function render(data){
+  let content=document.getElementById("content");
+  content.innerHTML="";
 
   if(data.length){
     document.getElementById("hero").style.backgroundImage =
       "url("+data[0].cover+")";
-    document.getElementById("hero").innerHTML =
-      "<h1>"+data[0].title+"</h1>";
   }
 
-  let row=document.getElementById("row");
+  let categories=[...new Set(data.map(m=>m.category))];
 
-  data.forEach(m=>{
-    let card=document.createElement("div");
-    card.className="card";
-    card.style.backgroundImage="url("+m.cover+")";
+  categories.forEach(cat=>{
+    let row=document.createElement("div");
+    row.className="row";
 
-    card.innerHTML=`
-      <div class="card-title">${m.title}</div>
-      <div class="progress" style="width:${m.progress}%"></div>
-    `;
+    let title=document.createElement("h2");
+    title.innerText=cat;
+    content.appendChild(title);
 
-    card.onclick=()=>{
-      document.getElementById("modal").style.display="block";
-      document.getElementById("title").innerText=m.title;
-      document.getElementById("story").innerText=m.story;
+    data.filter(m=>m.category===cat).forEach(m=>{
+      let card=document.createElement("div");
+      card.className="card";
 
-      let video=document.getElementById("video");
-      video.src="/stream/"+m.id;
+      card.innerHTML=`
+        <video class="preview" src="/stream/${m.id}" muted loop></video>
+        <div class="cover" style="background-image:url(${m.cover})"></div>
+        <div class="title">${m.title}</div>
+      `;
 
-      video.ontimeupdate=()=>{
-        let p=(video.currentTime/video.duration)*100;
-
-        fetch("/progress",{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            id:m.id,
-            progress:p
-          })
-        });
+      card.onmouseenter=()=>{
+        card.querySelector("video").play();
       };
-    };
 
-    row.appendChild(card);
+      card.onmouseleave=()=>{
+        card.querySelector("video").pause();
+      };
+
+      card.onclick=()=>{
+        let v=document.getElementById("video");
+        v.src="/stream/"+m.id;
+        document.getElementById("modal").style.display="block";
+      };
+
+      row.appendChild(card);
+    });
+
+    content.appendChild(row);
   });
-});
+}
+
+function search(q){
+  let f=DATA.filter(m=>m.title.toLowerCase().includes(q.toLowerCase()));
+  render(f);
+}
 
 function closeModal(){
   document.getElementById("modal").style.display="none";
