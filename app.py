@@ -1,5 +1,5 @@
 # ================================
-# 🎬 SAAS MODE (CLEAN PLATFORM)
+# 🎬 SAAS MODE + UI (FINAL)
 # ================================
 
 import os
@@ -7,13 +7,13 @@ import sqlite3
 import requests
 import re
 import time
-from flask import Flask, request, jsonify, Response, session
+from flask import Flask, request, jsonify, Response, render_template_string, session
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-app.secret_key = os.getenv("SECRET_KEY", "secret")
+app.secret_key = os.getenv("SECRET_KEY","secret")
 
 TOKEN = os.getenv("BOT_TOKEN")
 TMDB_KEY = os.getenv("TMDB_KEY")
@@ -230,34 +230,10 @@ def movies():
         } for r in rows
     ])
 
-@app.route("/progress", methods=["POST"])
-def progress():
-    user = session.get("user")
-    data = request.json
-
-    if not user:
-        return {"error":"not logged in"}
-
-    con = db()
-    cur = con.cursor()
-
-    cur.execute(
-        "INSERT INTO progress VALUES(?,?,?)",
-        (user, data["id"], data["progress"])
-    )
-
-    con.commit()
-    con.close()
-
-    return {"status":"ok"}
-
 @app.route("/watchlist", methods=["POST"])
 def watchlist():
     user = session.get("user")
     data = request.json
-
-    if not user:
-        return {"error":"not logged in"}
 
     con = db()
     cur = con.cursor()
@@ -273,6 +249,113 @@ def watchlist():
     return {"status":"ok"}
 
 # ================================
+# 🎬 UI
+# ================================
+
+@app.route("/")
+def home():
+    return render_template_string("""
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width">
+
+<style>
+body {margin:0;background:#141414;color:white;font-family:sans-serif}
+
+/* LOGIN */
+.login {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  margin-top:100px;
+}
+
+input {margin:5px;padding:10px}
+
+/* NAV */
+.nav {
+  display:flex;
+  justify-content:space-between;
+  padding:15px;
+  background:black;
+}
+
+.row {display:flex;overflow-x:auto;padding:20px}
+
+.card {
+  width:160px;height:240px;margin-right:10px;
+  background-size:cover;cursor:pointer;
+}
+</style>
+
+<body>
+
+<div id="app"></div>
+
+<script>
+let user=null;
+
+function renderLogin(){
+  document.getElementById("app").innerHTML=`
+    <div class="login">
+      <h1>Login</h1>
+      <input id="u" placeholder="User">
+      <input id="p" placeholder="Pass">
+      <button onclick="login()">Login</button>
+      <button onclick="register()">Register</button>
+    </div>
+  `;
+}
+
+function login(){
+  fetch("/login",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      username:u.value,password:p.value
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.status==="ok") loadApp();
+  });
+}
+
+function register(){
+  fetch("/register",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      username:u.value,password:p.value
+    })
+  });
+}
+
+function loadApp(){
+  fetch("/movies").then(r=>r.json()).then(data=>{
+    let html='<div class="nav">NETFLIX</div><div class="row">';
+
+    data.forEach(m=>{
+      html+=`
+        <div class="card"
+          style="background-image:url(${m.cover})"
+          onclick="play('${m.id}')">
+        </div>
+      `;
+    });
+
+    html+='</div><video id="video" controls style="width:100%"></video>';
+
+    document.getElementById("app").innerHTML=html;
+  });
+}
+
+function play(id){
+  document.getElementById("video").src="/stream/"+id;
+}
+
+renderLogin();
+</script>
+
+</body>
+</html>
+""")
+
+# ================================
 # WEBHOOK
 # ================================
 
@@ -284,14 +367,6 @@ def webhook():
         save(update["message"])
 
     return "ok"
-
-# ================================
-# ROOT
-# ================================
-
-@app.route("/")
-def root():
-    return "🚀 SAAS MODE ACTIVE"
 
 # ================================
 # START
