@@ -1,2 +1,0 @@
-pip install flask flask-cors requests
-python app.py
