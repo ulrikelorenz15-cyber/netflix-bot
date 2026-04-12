@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX UPGRADE UI FINAL
+# 🎬 ULTIMATE FINAL BOSS SYSTEM
 # ================================
 
 import os
@@ -158,7 +158,7 @@ def progress():
     return "ok"
 
 # ================================
-# UI (UPGRADE)
+# UI (FINAL BOSS)
 # ================================
 
 @app.route("/")
@@ -173,11 +173,11 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
 /* HERO */
 .hero {
-    height:65vh;
+    height:70vh;
     display:flex;
     align-items:end;
     padding:40px;
-    background:linear-gradient(to top, black, transparent), #222;
+    background:linear-gradient(to top, black, transparent), #111;
     font-size:40px;
 }
 
@@ -190,23 +190,30 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
 /* CARD */
 .card {
+    min-width:150px;
+    height:220px;
     margin-right:12px;
-    min-width:140px;
-    height:200px;
-    background:#222;
     border-radius:10px;
+    background:#222;
     position:relative;
     cursor:pointer;
     transition:0.3s;
-    display:flex;
-    align-items:end;
-    padding:10px;
-    font-size:12px;
+    overflow:hidden;
 }
 
 .card:hover {
-    transform:scale(1.15);
-    z-index:5;
+    transform:scale(1.2);
+    z-index:10;
+}
+
+/* TITLE OVERLAY */
+.card-title {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    background:linear-gradient(to top, black, transparent);
+    padding:10px;
+    font-size:12px;
 }
 
 /* PROGRESS */
@@ -228,7 +235,7 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
     background:black;
     display:none;
     padding:20px;
-    z-index:10;
+    z-index:100;
 }
 
 video {
@@ -266,9 +273,13 @@ fetch("/movies")
     let cont = document.getElementById("continue");
 
     data.forEach(m=>{
+
         let card = document.createElement("div");
         card.className = "card";
-        card.innerText = m.title;
+
+        card.innerHTML = `
+            <div class="card-title">${m.title}</div>
+        `;
 
         let p = document.createElement("div");
         p.className = "progress";
@@ -303,6 +314,7 @@ fetch("/movies")
             cont.appendChild(card.cloneNode(true));
         }
     });
+
 });
 
 function closeModal(){
