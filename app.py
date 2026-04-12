@@ -1,52 +1,63 @@
 # ================================
-# 🎬 ULTIMATE NETFLIX SYSTEM
+# 🎬 NETFLIX CLOUD SYSTEM (FINAL)
 # ================================
 
 import os
-import json
+import sqlite3
 import requests
 import re
 import time
 from flask import Flask, request, render_template_string, redirect, session
 
 app = Flask(__name__)
-app.secret_key = "netflix_secret"
+app.secret_key = "netflix_cloud"
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 TMDB_KEY = os.getenv("TMDB_KEY")
 
-DATA_FILE = "data.json"
-USER_FILE = "users.json"
+DB = "netflix.db"
 
 # ================================
-# DATA
+# DB INIT
 # ================================
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        return json.load(open(DATA_FILE))
-    return {"movies": []}
+def db():
+    return sqlite3.connect(DB)
 
-def save_data(data):
-    json.dump(data, open(DATA_FILE, "w"))
+def init_db():
+    con = db()
+    cur = con.cursor()
 
-def load_users():
-    if os.path.exists(USER_FILE):
-        return json.load(open(USER_FILE))
-    return {}
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS movies(
+        id TEXT,
+        title TEXT,
+        story TEXT,
+        file_id TEXT,
+        poster TEXT,
+        views INTEGER,
+        timestamp REAL
+    )
+    """)
 
-def save_users(data):
-    json.dump(data, open(USER_FILE, "w"))
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        uid TEXT,
+        history TEXT
+    )
+    """)
 
-def get_id(data):
-    return str(len(data["movies"]) + 1).zfill(4)
+    con.commit()
+    con.close()
+
+init_db()
 
 # ================================
-# AUTO COVER
+# AUTO COVER (TMDB)
 # ================================
 
-def get_poster(title):
+def get_tmdb(title):
     try:
         r = requests.get(
             "https://api.themoviedb.org/3/search/movie",
@@ -58,7 +69,7 @@ def get_poster(title):
     except:
         pass
 
-    return "https://dummyimage.com/300x450/000/fff&text=No+Cover"
+    return None
 
 # ================================
 # PARSER
@@ -74,31 +85,86 @@ def extract(text):
     if s:
         story = s.group(1)
 
-    return {
-        "title": t.group(1),
-        "year": t.group(2),
-        "story": story
-    }
+    return t.group(1), story
 
 # ================================
-# USER SYSTEM
+# SAVE MOVIE (SMART COVER)
 # ================================
 
-def get_current_user():
-    return session.get("uid")
+def save_movie(msg):
+    caption = msg.get("caption","")
+    video = msg.get("video") or msg.get("document")
 
-def update_progress(uid, movie_id):
-    users = load_users()
-    user = users.get(uid, {"history": []})
+    parsed = extract(caption)
+    if not parsed:
+        return
 
-    if movie_id in user["history"]:
-        user["history"].remove(movie_id)
+    title, story = parsed
 
-    user["history"].insert(0, movie_id)
-    user["history"] = user["history"][:10]
+    # 🔥 PRIORITY COVER SYSTEM
+    poster = None
 
-    users[uid] = user
-    save_users(users)
+    # 1️⃣ TELEGRAM THUMB
+    if video.get("thumb"):
+        poster = video["thumb"]["file_id"]
+
+    # 2️⃣ PHOTO IN MESSAGE
+    if "photo" in msg:
+        poster = msg["photo"][-1]["file_id"]
+
+    # 3️⃣ TMDB
+    if not poster:
+        poster = get_tmdb(title)
+
+    con = db()
+    cur = con.cursor()
+
+    cur.execute("""
+    INSERT INTO movies VALUES(?,?,?,?,?,?,?)
+    """, (
+        str(int(time.time())),
+        title,
+        story,
+        video["file_id"],
+        poster,
+        0,
+        time.time()
+    ))
+
+    con.commit()
+    con.close()
+
+# ================================
+# TRENDING
+# ================================
+
+def get_movies():
+    con = db()
+    cur = con.cursor()
+
+    rows = cur.execute("SELECT * FROM movies").fetchall()
+    con.close()
+
+    movies = []
+    for r in rows:
+        movies.append({
+            "id": r[0],
+            "title": r[1],
+            "story": r[2],
+            "file_id": r[3],
+            "poster": r[4],
+            "views": r[5],
+            "timestamp": r[6]
+        })
+
+    return movies
+
+def trending(movies):
+    return sorted(
+        movies,
+        key=lambda m: m["views"] + (10 - (time.time()-m["timestamp"])/86400),
+        reverse=True
+    )[:10]
 
 # ================================
 # LOGIN
@@ -107,88 +173,47 @@ def update_progress(uid, movie_id):
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        uid = request.form["uid"]
-        session["uid"] = uid
+        session["uid"] = request.form["uid"]
         return redirect("/")
-    return """
-    <form method="post">
-        Telegram ID:<input name="uid">
-        <button>Login</button>
-    </form>
-    """
+    return "<form method='post'>Telegram ID:<input name='uid'><button>Login</button></form>"
 
 # ================================
-# HOME UI
+# HOME
 # ================================
 
 @app.route("/")
 def home():
-    uid = get_current_user()
+    uid = session.get("uid")
     if not uid:
         return redirect("/login")
 
-    data = load_data()
-    users = load_users()
+    movies = get_movies()
+    top = trending(movies)
 
-    movies = data["movies"]
-    history_ids = users.get(uid, {}).get("history", [])
-
-    continue_movies = [m for m in movies if m["id"] in history_ids]
-
-    hero = movies[0] if movies else None
+    hero = top[0] if top else None
 
     return render_template_string("""
     <html>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-
     <style>
-    body {background:#141414;color:white;margin:0;font-family:sans-serif}
-    .nav {position:fixed;width:100%;background:#000;padding:10px}
-    .row {display:flex;overflow-x:auto;padding:10px}
-    .card {margin-right:10px;position:relative}
-    .card img {width:140px;border-radius:8px}
-
-    .progress {
-        position:absolute;
-        bottom:0;
-        height:5px;
-        background:red;
-        width:50%;
-    }
-
-    .hero {height:60vh;background-size:cover;display:flex;align-items:flex-end;padding:20px}
+    body {background:#141414;color:white}
+    .row {display:flex;overflow-x:auto}
+    img {width:140px;margin:5px;border-radius:8px}
     </style>
 
-    <div class="nav">👤 {{uid}}</div>
-
     {% if hero %}
-    <div class="hero" style="background-image:url('{{hero.poster}}')">
-        {{hero.title}}
+    <div style="height:60vh;background:url('{{hero.poster}}');background-size:cover">
+        <h1>{{hero.title}}</h1>
     </div>
     {% endif %}
 
-    <h3>▶️ Continue Watching</h3>
-    <div class="row">
-    {% for m in continue_movies %}
-        <div class="card">
-            <img src="{{m.poster}}">
-            <div class="progress"></div>
-        </div>
-    {% endfor %}
-    </div>
-
     <h3>🔥 Trending</h3>
     <div class="row">
-    {% for m in movies %}
-        <div class="card">
-            <a href="/play/{{m.id}}">
-                <img src="{{m.poster}}">
-            </a>
-        </div>
+    {% for m in top %}
+        <a href="/play/{{m.id}}"><img src="{{m.poster}}"></a>
     {% endfor %}
     </div>
 
-    """, movies=movies, hero=hero, continue_movies=continue_movies, uid=uid)
+    """, top=top, hero=hero)
 
 # ================================
 # PLAY
@@ -196,67 +221,25 @@ def home():
 
 @app.route("/play/<mid>")
 def play(mid):
-    uid = get_current_user()
-    data = load_data()
+    uid = session.get("uid")
 
-    m = next(x for x in data["movies"] if x["id"] == mid)
+    con = db()
+    cur = con.cursor()
 
-    if uid:
-        update_progress(uid, mid)
+    m = cur.execute("SELECT * FROM movies WHERE id=?", (mid,)).fetchone()
+
+    if m:
+        cur.execute("UPDATE movies SET views=views+1 WHERE id=?", (mid,))
+        con.commit()
 
         requests.post(f"{URL}/sendVideo", json={
             "chat_id": uid,
-            "video": m["file_id"],
-            "caption": f"▶️ {m['title']}"
+            "video": m[3],
+            "caption": m[1]
         })
 
+    con.close()
     return redirect("/")
-
-# ================================
-# ADMIN
-# ================================
-
-@app.route("/admin")
-def admin():
-    data = load_data()
-    return render_template_string("""
-    <h1>Admin</h1>
-    {% for m in data.movies %}
-        <div>
-            {{m.title}}
-            <a href="/edit/{{m.id}}">Edit</a>
-            <a href="/delete/{{m.id}}">Delete</a>
-        </div>
-    {% endfor %}
-    """, data=data)
-
-@app.route("/edit/<mid>", methods=["GET","POST"])
-def edit(mid):
-    data = load_data()
-    m = next(x for x in data["movies"] if x["id"] == mid)
-
-    if request.method == "POST":
-        m["title"] = request.form["title"]
-        m["poster"] = request.form["poster"]
-        m["story"] = request.form["story"]
-        save_data(data)
-        return redirect("/admin")
-
-    return render_template_string("""
-    <form method="post">
-        Title:<input name="title" value="{{m.title}}">
-        Poster:<input name="poster" value="{{m.poster}}">
-        <textarea name="story">{{m.story}}</textarea>
-        <button>Save</button>
-    </form>
-    """, m=m)
-
-@app.route("/delete/<mid>")
-def delete(mid):
-    data = load_data()
-    data["movies"] = [m for m in data["movies"] if m["id"] != mid]
-    save_data(data)
-    return redirect("/admin")
 
 # ================================
 # WEBHOOK
@@ -269,18 +252,8 @@ def webhook():
     if "message" in update:
         msg = update["message"]
 
-        if "video" in msg:
-            data = load_data()
-            info = extract(msg.get("caption",""))
-
-            if info:
-                data["movies"].append({
-                    "id": get_id(data),
-                    **info,
-                    "file_id": msg["video"]["file_id"],
-                    "poster": get_poster(info["title"])
-                })
-                save_data(data)
+        if "video" in msg or "document" in msg:
+            save_movie(msg)
 
     return "ok"
 
