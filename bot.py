@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTRA FIXED MATCH SYSTEM)
+# 🎬 NETFLIX BOT FINAL (ULTRA FIXED MATCH SYSTEM FINAL)
 # ================================
 
 import os
@@ -17,8 +17,6 @@ CHANNEL = "-1003526259129"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DATA_FILE = "data.json"
-USERS_FILE = "users.json"
-
 SESSION = {}
 
 # ================================
@@ -34,12 +32,47 @@ def safe_post(method, payload):
     except Exception as e:
         log_error(e)
 
-def clean_title(raw):
-    if not raw:
+def clean_text(text):
+    if not text:
         return ""
-    raw = raw.replace(".", " ")
-    blacklist = ["1080p","720p","bluray","x264","x265","dvdrip","webdl"]
-    return " ".join([w for w in raw.split() if w.lower() not in blacklist])
+
+    text = text.lower()
+
+    blacklist = [
+        "1080p","720p","bluray","x264","x265",
+        "dvdrip","webdl","german","dl","hdrip",
+        "hevc","4k"
+    ]
+
+    text = text.replace(".", " ").replace("-", " ")
+
+    words = text.split()
+    return " ".join([w for w in words if w not in blacklist])
+
+# ================================
+# 🧠 ULTRA TITLE EXTRACTOR
+# ================================
+
+def extract_title_ultra(msg):
+    caption = msg.get("caption") or ""
+    filename = msg.get("document", {}).get("file_name", "")
+
+    # 🎬 PRIORITY: 🎬 TITLE
+    m = re.search(r"🎬\s*([^\(\n]+)", caption)
+    if m:
+        return m.group(1).strip()
+
+    # 🧠 FALLBACK: FIRST LINE
+    first_line = caption.split("\n")[0]
+    first_line = re.sub(r"[^\w\s]", "", first_line)
+    if len(first_line.split()) <= 5:
+        return first_line.strip()
+
+    # 📂 FILE NAME
+    if filename:
+        return clean_text(filename)
+
+    return clean_text(caption)
 
 # ================================
 # 🧠 AI GENRE
@@ -66,71 +99,6 @@ def generate_poster(title):
     return f"https://image.pollinations.ai/prompt/{title}+movie+poster"
 
 # ================================
-# 🧠 ULTRA PARSER (FIXED)
-# ================================
-
-def extract_movie_data(text):
-    if not text:
-        return None
-
-    original = text
-    text = text.replace("\n", " ").strip()
-
-    # TITLE
-    title = None
-    year = ""
-
-    m = re.search(r"🎬\s*([^\(\n]+)", original)
-    if m:
-        title = m.group(1).strip()
-
-    if not title:
-        words = clean_title(original).split()
-        title = " ".join(words[:3])
-
-    title = title.replace("🎬", "").strip()
-
-    # YEAR
-    y = re.search(r"\((\d{4})\)", original)
-    if y:
-        year = y.group(1)
-
-    # GENRE
-    genres = re.findall(r"#(\w+)", original)
-
-    if not genres:
-        g = re.search(r"🔥.*?•(.*?)━", original)
-        if g:
-            genres = [p.strip() for p in g.group(1).split("•")]
-
-    if not genres:
-        genres = ai_detect_genre(title)
-
-    # RUNTIME
-    runtime = "-"
-    rt = re.search(r"⏱\s*([0-9]+ ?min)", original.lower())
-    if rt:
-        runtime = rt.group(1)
-
-    # DIRECTOR
-    director = "-"
-    dr = re.search(r"🎥\s*([^\n]+)", original)
-    if dr:
-        director = dr.group(1).strip()
-
-    if not title:
-        return None
-
-    return {
-        "title": title,
-        "year": year,
-        "genre": genres[:2],
-        "runtime": runtime,
-        "director": director,
-        "rating": "-"
-    }
-
-# ================================
 # DATA
 # ================================
 
@@ -146,39 +114,43 @@ def get_next_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# SAVE MOVIE
+# 🧠 SAVE MOVIE (FIXED)
 # ================================
 
 def save_movie_from_post(msg):
     data = load_data()
     video = msg.get("video") or msg.get("document")
+
+    title = extract_title_ultra(msg)
+
+    if not title or len(title) < 2:
+        return None
+
+    # YEAR
     caption = msg.get("caption") or ""
+    year = ""
+    y = re.search(r"\((\d{4})\)", caption)
+    if y:
+        year = y.group(1)
 
-    info = extract_movie_data(caption)
-
-    # 🔥 FALLBACK (ANTI UNKNOWN)
-    if not info:
-        raw = clean_title(caption)
-        if not raw:
-            return None
-
-        info = {
-            "title": raw,
-            "year": "",
-            "genre": ai_detect_genre(raw),
-            "runtime": "-",
-            "director": "-",
-            "rating": "-"
-        }
+    # GENRE
+    genres = re.findall(r"#(\w+)", caption)
+    if not genres:
+        genres = ai_detect_genre(title)
 
     # DUPLICATE CHECK
     for m in data["movies"]:
-        if m["title"].lower() == info["title"].lower():
+        if m["title"].lower() == title.lower():
             return m
 
     entry = {
         "id": get_next_id(data),
-        **info,
+        "title": title,
+        "year": year,
+        "genre": genres[:2],
+        "runtime": "-",
+        "director": "-",
+        "rating": "-",
         "file_id": video["file_id"],
         "views": 0
     }
@@ -237,7 +209,6 @@ def send_card(chat_id, movie):
 🔥 4K • {' • '.join(movie.get('genre',[]))}
 ━━━━━━━━━━━━━━
 ⭐ {movie.get('rating','-')} • ⏱ {movie.get('runtime','-')}
-🎥 {movie.get('director','-')}
 ━━━━━━━━━━━━━━
 ▶️ #{movie['id']}
 ━━━━━━━━━━━━━━
@@ -263,7 +234,7 @@ def show_home(chat_id):
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 Netflix System"
+        "text": "🎬 Library of Legends\n🔥 FINAL SYSTEM"
     })
 
     show_swipe(chat_id, get_top_movies(data))
@@ -278,13 +249,13 @@ def handle_video(msg):
     if not entry:
         safe_post("sendMessage", {
             "chat_id": msg["chat"]["id"],
-            "text": "❌ Fehler beim Erkennen"
+            "text": "❌ Film konnte nicht erkannt werden"
         })
         return
 
     safe_post("sendMessage", {
         "chat_id": msg["chat"]["id"],
-        "text": f"✅ Gespeichert: {entry['title']}"
+        "text": f"🔥 ERKANNT: {entry['title']}"
     })
 
     send_card(msg["chat"]["id"], entry)
