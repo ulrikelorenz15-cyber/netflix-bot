@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTRA GOD MODE + HOME UI)
+# 🎬 NETFLIX BOT FINAL (MENU + UI FINAL)
 # ================================
 
 import os
@@ -40,6 +40,24 @@ def clean_title(raw):
     return " ".join([w for w in raw.split() if w.lower() not in blacklist])
 
 # ================================
+# MAIN MENU
+# ================================
+
+def show_main_menu(chat_id):
+    safe_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": "🎬 Library of Legends\n\nWähle eine Kategorie:",
+        "reply_markup": {
+            "inline_keyboard": [
+                [{"text": "▶️ Start", "callback_data": "home"}],
+                [{"text": "🔥 Trending", "callback_data": "menu_trending"}],
+                [{"text": "🆕 Neu", "callback_data": "menu_new"}],
+                [{"text": "🎞 Reihen", "callback_data": "menu_series"}]
+            ]
+        }
+    })
+
+# ================================
 # LOCAL MATCH
 # ================================
 
@@ -54,20 +72,6 @@ def local_match(title):
         if key in t:
             return LOCAL_DB[key]
     return None
-
-# ================================
-# AI
-# ================================
-
-def ai_detect_title(raw_text):
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role":"user","content":raw_text}]
-        )
-        return res.choices[0].message.content.strip()
-    except:
-        return None
 
 # ================================
 # OMDb
@@ -137,7 +141,7 @@ def get_series_list(data, name):
     return [m for m in data["movies"] if m.get("series") == name]
 
 # ================================
-# UI GRID
+# GRID (MIT NAV)
 # ================================
 
 def show_grid(chat_id, movies):
@@ -153,9 +157,13 @@ def show_grid(chat_id, movies):
             "photo": movie.get("Poster"),
             "caption": f"🎬 {movie['Title']} • ⭐ {movie['imdbRating']}",
             "reply_markup": {
-                "inline_keyboard": [[
-                    {"text": "▶️ Öffnen", "callback_data": f"movie_{movie['Title']}"}
-                ]]
+                "inline_keyboard": [
+                    [{"text": "▶️ Öffnen", "callback_data": f"movie_{movie['Title']}"}],
+                    [
+                        {"text": "🏠 Home", "callback_data": "home"},
+                        {"text": "🔙 Menü", "callback_data": "menu"}
+                    ]
+                ]
             }
         })
 
@@ -178,7 +186,7 @@ def show_series_row(chat_id, data):
         })
 
 # ================================
-# HOME UI
+# HOME
 # ================================
 
 def show_home(chat_id):
@@ -199,18 +207,27 @@ def show_home(chat_id):
     show_series_row(chat_id, data)
 
 # ================================
-# CARD
+# CARD (DETAIL)
 # ================================
 
 def send_card(chat_id, movie, local):
     caption = f"""🎬 {movie['Title']} ({movie['Year']})
+
 ⭐ {movie['imdbRating']} • ⏱ {movie.get('Runtime')}
+🎥 {movie.get('Director')}
+
 ▶️ #{local['id']}"""
 
     safe_post("sendVideo", {
         "chat_id": chat_id,
         "video": local["file_id"],
-        "caption": caption
+        "caption": caption,
+        "reply_markup": {
+            "inline_keyboard": [
+                [{"text": "🏠 Home", "callback_data": "home"}],
+                [{"text": "🔙 Menü", "callback_data": "menu"}]
+            ]
+        }
     })
 
 # ================================
@@ -269,7 +286,22 @@ def webhook():
         chat_id = update["callback_query"]["message"]["chat"]["id"]
         cb = update["callback_query"]["data"]
 
-        if cb.startswith("movie_"):
+        if cb == "menu":
+            show_main_menu(chat_id)
+
+        elif cb == "home":
+            show_home(chat_id)
+
+        elif cb == "menu_trending":
+            show_grid(chat_id, get_rankings(data)["🔥 Trending"])
+
+        elif cb == "menu_new":
+            show_grid(chat_id, get_rankings(data)["🆕 Neu"])
+
+        elif cb == "menu_series":
+            show_series_row(chat_id, data)
+
+        elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
             m = next((x for x in data["movies"] if x["title"] == title), None)
 
@@ -287,7 +319,7 @@ def webhook():
         msg = update["message"]
 
         if msg.get("text") == "/start":
-            show_home(msg["chat"]["id"])
+            show_main_menu(msg["chat"]["id"])
 
         if "video" in msg or "document" in msg:
             handle_video(msg)
