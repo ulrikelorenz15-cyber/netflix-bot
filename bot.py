@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 
 TOKEN = "8798666857:AAHe5OvSr7Wzx1iJLVvjH5DiPRNxYGPZ6Yw"
-TMDB_KEY = ""  # optional
+TMDB_KEY = "db9b706c6b6dae0074108285d99ef9bb"  # optional
 
 DB = "movies.db"
 
