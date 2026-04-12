@@ -1,12 +1,12 @@
 # ================================
-# 🎬 PRO BACKEND (STREAM READY)
+# 🎬 FINAL BACKEND (CLEAN VERSION)
 # ================================
 
 import os
 import sqlite3
 import requests
-import time
 import re
+import time
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
@@ -25,7 +25,7 @@ DB = "netflix.db"
 def db():
     return sqlite3.connect(DB)
 
-def init():
+def init_db():
     con = db()
     cur = con.cursor()
 
@@ -42,21 +42,26 @@ def init():
     con.commit()
     con.close()
 
-init()
+init_db()
 
 # ================================
-# PARSER
+# 🎯 FINAL PARSER (CLEAN)
 # ================================
 
-def extract(caption):
+def extract_data(caption):
     if not caption:
         return "Film", "-"
 
-    title = caption.split("\n")[0]
+    # 🎬 Titel sauber
+    title_match = re.search(r"🎬\s*(.*?)\s*\(", caption)
+    title = title_match.group(1) if title_match else caption.split("\n")[0]
 
+    # 📖 Story sauber
     story = "-"
-    if "STORY" in caption:
-        story = caption.split("STORY")[-1][:300]
+    story_match = re.search(r"STORY\s*(.*?)\s*(▶️|#|$)", caption, re.S)
+
+    if story_match:
+        story = story_match.group(1).strip()
 
     return title.strip(), story.strip()
 
@@ -68,7 +73,7 @@ def save(msg):
     if "video" not in msg:
         return
 
-    title, story = extract(msg.get("caption",""))
+    title, story = extract_data(msg.get("caption",""))
 
     con = db()
     cur = con.cursor()
@@ -86,6 +91,8 @@ def save(msg):
     con.commit()
     con.close()
 
+    print("✅ Saved:", title)
+
 # ================================
 # TELEGRAM FILE URL
 # ================================
@@ -96,7 +103,7 @@ def get_file(file_id):
     return f"https://api.telegram.org/file/bot{TOKEN}/{path}"
 
 # ================================
-# STREAM (CDN READY)
+# STREAM
 # ================================
 
 @app.route("/stream/<id>")
@@ -107,10 +114,13 @@ def stream(id):
     m = cur.execute("SELECT * FROM movies WHERE id=?", (id,)).fetchone()
     con.close()
 
-    url = get_file(m[3])
+    if not m:
+        return "Not found"
+
+    file_url = get_file(m[3])
 
     def generate():
-        with requests.get(url, stream=True) as r:
+        with requests.get(file_url, stream=True) as r:
             for chunk in r.iter_content(chunk_size=1024*1024):
                 yield chunk
 
@@ -157,6 +167,14 @@ def progress():
     con.close()
 
     return "ok"
+
+# ================================
+# ROOT
+# ================================
+
+@app.route("/")
+def root():
+    return "✅ Backend läuft"
 
 # ================================
 # WEBHOOK
