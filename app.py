@@ -1,11 +1,10 @@
 # ================================
-# 🎬 NETFLIX NEXT LEVEL SYSTEM
+# 🎬 NETFLIX CLEAN WORKING SYSTEM
 # ================================
 
 import os
 import sqlite3
 import requests
-import re
 import time
 from flask import Flask, request, jsonify, render_template_string
 
@@ -15,7 +14,6 @@ TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 DB = "netflix.db"
-LAST_COVER = {}
 
 # ================================
 # DB
@@ -29,15 +27,12 @@ def init_db():
     cur = con.cursor()
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS content(
+    CREATE TABLE IF NOT EXISTS movies(
         id TEXT,
         title TEXT,
-        category TEXT,
         story TEXT,
         file_id TEXT,
-        poster TEXT,
-        views INTEGER,
-        timestamp REAL
+        poster TEXT
     )
     """)
 
@@ -47,64 +42,30 @@ def init_db():
 init_db()
 
 # ================================
-# PARSER
-# ================================
-
-def extract(text):
-    title = re.search(r"🎬\s*(.*?)\s*\(", text)
-
-    # Kategorien aus Hashtags
-    tags = re.findall(r"#(\w+)", text)
-
-    story = "-"
-    s = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S)
-    if s:
-        story = s.group(1)
-
-    return {
-        "title": title.group(1) if title else "Unknown",
-        "category": tags[0] if tags else "Trending",
-        "story": story
-    }
-
-# ================================
 # SAVE FROM TELEGRAM
 # ================================
 
 def save(msg):
-    global LAST_COVER
-    chat_id = msg["chat"]["id"]
-
-    if "photo" in msg:
-        LAST_COVER[chat_id] = msg["photo"][-1]["file_id"]
-        return
-
     if "video" not in msg:
         return
 
-    video = msg["video"]
-    info = extract(msg.get("caption",""))
+    title = "Film"
+    if msg.get("caption"):
+        title = msg["caption"].split("\n")[0]
 
-    if not info:
-        return
-
-    # ❗ echtes Bild geht im Web nur als URL
-    poster = f"https://dummyimage.com/300x450/000/fff&text={info['title'].replace(' ','+')}"
+    poster = "https://via.placeholder.com/300x450?text=Movie"
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO content VALUES(?,?,?,?,?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?)
     """, (
         str(int(time.time())),
-        info["title"],
-        info["category"],
-        info["story"],
-        video["file_id"],
-        poster,
-        0,
-        time.time()
+        title,
+        msg.get("caption",""),
+        msg["video"]["file_id"],
+        poster
     ))
 
     con.commit()
@@ -119,20 +80,18 @@ def api():
     con = db()
     cur = con.cursor()
 
-    rows = cur.execute("SELECT * FROM content").fetchall()
+    rows = cur.execute("SELECT * FROM movies").fetchall()
     con.close()
 
-    data = [{
-        "id": r[0],
-        "title": r[1],
-        "category": r[2],
-        "story": r[3],
-        "file_id": r[4],
-        "poster": r[5],
-        "views": r[6]
-    } for r in rows]
-
-    return jsonify(data)
+    return jsonify([
+        {
+            "id": r[0],
+            "title": r[1],
+            "story": r[2],
+            "file_id": r[3],
+            "poster": r[4]
+        } for r in rows
+    ])
 
 # ================================
 # PLAY
@@ -145,15 +104,12 @@ def play(id):
     con = db()
     cur = con.cursor()
 
-    m = cur.execute("SELECT * FROM content WHERE id=?", (id,)).fetchone()
+    m = cur.execute("SELECT * FROM movies WHERE id=?", (id,)).fetchone()
 
     if m and uid:
-        cur.execute("UPDATE content SET views=views+1 WHERE id=?", (id,))
-        con.commit()
-
         requests.post(f"{URL}/sendVideo", json={
             "chat_id": uid,
-            "video": m[4],
+            "video": m[3],
             "caption": m[1]
         })
 
@@ -161,7 +117,7 @@ def play(id):
     return "OK"
 
 # ================================
-# WEB UI (NEXT LEVEL)
+# UI (SAUBER + FUNKTIONIERT)
 # ================================
 
 @app.route("/")
@@ -172,24 +128,14 @@ def home():
 <meta name="viewport" content="width=device-width">
 
 <style>
-body {margin:0;background:#141414;color:white;font-family:sans-serif}
-
-.nav {
-    position:fixed;
-    width:100%;
-    padding:15px;
-    background:linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-    display:flex;
-    justify-content:space-between;
-    z-index:10;
-}
+body {background:#111;color:white;font-family:sans-serif;margin:0}
 
 .hero {
-    height:70vh;
+    height:50vh;
     display:flex;
     align-items:end;
-    padding:30px;
-    background-size:cover;
+    padding:20px;
+    background:#222;
 }
 
 .row {
@@ -200,32 +146,14 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
 .card {
     margin-right:10px;
-    transition:0.3s;
-    position:relative;
+    cursor:pointer;
 }
 
 .card img {
-    width:160px;
+    width:140px;
     border-radius:10px;
 }
 
-.card:hover {
-    transform:scale(1.2);
-}
-
-.overlay {
-    position:absolute;
-    bottom:0;
-    width:100%;
-    background:rgba(0,0,0,0.8);
-    opacity:0;
-}
-
-.card:hover .overlay {
-    opacity:1;
-}
-
-/* MODAL */
 .modal {
     position:fixed;
     top:0;
@@ -235,19 +163,14 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
     background:black;
     display:none;
     padding:20px;
-    z-index:20;
 }
 </style>
 
 <body>
 
-<div class="nav">
-    <div>🎬 NETFLIX</div>
-</div>
+<div class="hero">🎬 Netflix Clone</div>
 
-<div id="hero" class="hero"></div>
-
-<div id="content"></div>
+<div class="row" id="row"></div>
 
 <div id="modal" class="modal">
     <h1 id="title"></h1>
@@ -259,56 +182,30 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 <script>
 let DATA = [];
 let current = null;
-let uid = prompt("Telegram ID:");
+let uid = prompt("Deine Telegram ID:");
 
 fetch("/api")
 .then(r=>r.json())
 .then(data=>{
     DATA = data;
 
-    if(data.length){
-        document.getElementById("hero").style.backgroundImage =
-            "url("+data[0].poster+")";
-    }
-
-    let grouped = {};
+    let row = document.getElementById("row");
 
     data.forEach(m=>{
-        if(!grouped[m.category]) grouped[m.category]=[];
-        grouped[m.category].push(m);
+        let div = document.createElement("div");
+        div.className = "card";
+
+        div.innerHTML = `<img src="${m.poster}">`;
+
+        div.onclick = ()=>{
+            current = m;
+            document.getElementById("modal").style.display="block";
+            document.getElementById("title").innerText = m.title;
+            document.getElementById("story").innerText = m.story;
+        };
+
+        row.appendChild(div);
     });
-
-    let container = document.getElementById("content");
-
-    for(let cat in grouped){
-        let title = document.createElement("h2");
-        title.innerText = cat;
-
-        let row = document.createElement("div");
-        row.className="row";
-
-        grouped[cat].forEach(m=>{
-            let card = document.createElement("div");
-            card.className="card";
-
-            card.innerHTML = `
-                <img src="${m.poster}">
-                <div class="overlay">${m.title}</div>
-            `;
-
-            card.onclick = ()=>{
-                current = m;
-                document.getElementById("modal").style.display="block";
-                document.getElementById("title").innerText = m.title;
-                document.getElementById("story").innerText = m.story;
-            };
-
-            row.appendChild(card);
-        });
-
-        container.appendChild(title);
-        container.appendChild(row);
-    }
 });
 
 function closeModal(){
