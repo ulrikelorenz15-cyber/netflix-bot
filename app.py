@@ -1,5 +1,5 @@
 # ================================
-# 🎬 ULTRA UI PRO MAX SYSTEM
+# 🎬 ULTIMATE PLATFORM MODE
 # ================================
 
 import os
@@ -88,7 +88,7 @@ def extract_data(caption):
     return title.strip(), story.strip(), category
 
 # ================================
-# SAVE
+# SAVE TELEGRAM
 # ================================
 
 def save(msg):
@@ -137,16 +137,12 @@ def stream(id):
     m = cur.execute("SELECT * FROM movies WHERE id=?", (id,)).fetchone()
     con.close()
 
-    if not m:
-        return "Not found"
-
     url = get_file(m[3])
 
     def generate():
         with requests.get(url, stream=True) as r:
             for chunk in r.iter_content(chunk_size=1024*1024):
-                if chunk:
-                    yield chunk
+                yield chunk
 
     return Response(generate(), content_type="video/mp4")
 
@@ -195,7 +191,7 @@ def progress():
     return "ok"
 
 # ================================
-# 🎬 ULTRA UI
+# 🎬 UI (ULTIMATE PLATFORM)
 # ================================
 
 @app.route("/")
@@ -220,7 +216,6 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
   background:#222;
   border:none;
   color:white;
-  padding:5px;
 }
 
 /* HERO */
@@ -248,14 +243,8 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
   border-radius:10px;
   overflow:hidden;
   cursor:pointer;
-  transition:0.3s;
 }
 
-.card:hover {
-  transform:scale(1.3);
-}
-
-/* VIDEO PREVIEW */
 .preview {
   position:absolute;
   width:100%;
@@ -268,7 +257,6 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
   opacity:1;
 }
 
-/* COVER */
 .cover {
   position:absolute;
   width:100%;
@@ -276,13 +264,11 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
   background-size:cover;
 }
 
-/* TITLE */
 .title {
   position:absolute;
   bottom:0;
   padding:10px;
   background:linear-gradient(to top, black, transparent);
-  width:100%;
 }
 
 /* MODAL */
@@ -294,10 +280,6 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
   background:black;
   display:none;
 }
-
-video {
-  width:100%;
-}
 </style>
 
 <body>
@@ -308,7 +290,6 @@ video {
 </div>
 
 <div id="hero" class="hero"></div>
-
 <div id="content"></div>
 
 <div id="modal" class="modal">
@@ -318,6 +299,7 @@ video {
 
 <script>
 let DATA=[];
+let WATCHLIST = JSON.parse(localStorage.getItem("watchlist")||"[]");
 
 fetch("/movies")
 .then(r=>r.json())
@@ -338,12 +320,12 @@ function render(data){
   let categories=[...new Set(data.map(m=>m.category))];
 
   categories.forEach(cat=>{
-    let row=document.createElement("div");
-    row.className="row";
-
     let title=document.createElement("h2");
     title.innerText=cat;
     content.appendChild(title);
+
+    let row=document.createElement("div");
+    row.className="row";
 
     data.filter(m=>m.category===cat).forEach(m=>{
       let card=document.createElement("div");
@@ -354,14 +336,6 @@ function render(data){
         <div class="cover" style="background-image:url(${m.cover})"></div>
         <div class="title">${m.title}</div>
       `;
-
-      card.onmouseenter=()=>{
-        card.querySelector("video").play();
-      };
-
-      card.onmouseleave=()=>{
-        card.querySelector("video").pause();
-      };
 
       card.onclick=()=>{
         let v=document.getElementById("video");
