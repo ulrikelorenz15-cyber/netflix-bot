@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX CLEAN WORKING SYSTEM
+# 🎬 NETFLIX CLEAN FINAL SYSTEM
 # ================================
 
 import os
@@ -117,7 +117,7 @@ def play(id):
     return "OK"
 
 # ================================
-# UI (SAUBER + FUNKTIONIERT)
+# UI (FINAL)
 # ================================
 
 @app.route("/")
@@ -128,32 +128,67 @@ def home():
 <meta name="viewport" content="width=device-width">
 
 <style>
-body {background:#111;color:white;font-family:sans-serif;margin:0}
+body {background:#141414;color:white;margin:0;font-family:sans-serif}
 
-.hero {
-    height:50vh;
-    display:flex;
-    align-items:end;
-    padding:20px;
-    background:#222;
+/* NAV */
+.nav {
+    position:fixed;
+    width:100%;
+    padding:15px;
+    background:linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+    z-index:10;
 }
 
+/* HERO */
+.hero {
+    height:60vh;
+    display:flex;
+    align-items:end;
+    padding:30px;
+    background:#222;
+    font-size:30px;
+}
+
+/* ROW */
 .row {
     display:flex;
     overflow-x:auto;
     padding:20px;
 }
 
+/* CARD */
 .card {
     margin-right:10px;
+    position:relative;
+    transition:0.3s;
     cursor:pointer;
 }
 
 .card img {
-    width:140px;
+    width:150px;
     border-radius:10px;
 }
 
+.card:hover {
+    transform:scale(1.1);
+}
+
+/* OVERLAY */
+.overlay {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    background:rgba(0,0,0,0.8);
+    opacity:0;
+    padding:5px;
+    font-size:12px;
+}
+
+.card:hover .overlay {
+    opacity:1;
+}
+
+/* MODAL */
 .modal {
     position:fixed;
     top:0;
@@ -163,14 +198,17 @@ body {background:#111;color:white;font-family:sans-serif;margin:0}
     background:black;
     display:none;
     padding:20px;
+    z-index:20;
 }
 </style>
 
 <body>
 
-<div class="hero">🎬 Netflix Clone</div>
+<div class="nav">🎬 NETFLIX</div>
 
-<div class="row" id="row"></div>
+<div id="hero" class="hero"></div>
+
+<div id="content"></div>
 
 <div id="modal" class="modal">
     <h1 id="title"></h1>
@@ -189,31 +227,54 @@ fetch("/api")
 .then(data=>{
     DATA = data;
 
-    let row = document.getElementById("row");
+    if(data.length){
+        document.getElementById("hero").innerText = data[0].title;
+    }
 
-    data.forEach(m=>{
-        let div = document.createElement("div");
-        div.className = "card";
+    let categories = {
+        "🔥 Trending": data,
+        "🎬 Alle Filme": data
+    };
 
-        div.innerHTML = `<img src="${m.poster}">`;
+    let container = document.getElementById("content");
 
-        div.onclick = ()=>{
-            current = m;
-            document.getElementById("modal").style.display="block";
-            document.getElementById("title").innerText = m.title;
-            document.getElementById("story").innerText = m.story;
-        };
+    for(let cat in categories){
+        let title = document.createElement("h2");
+        title.innerText = cat;
 
-        row.appendChild(div);
-    });
+        let row = document.createElement("div");
+        row.className = "row";
+
+        categories[cat].forEach(m=>{
+            let card = document.createElement("div");
+            card.className = "card";
+
+            card.innerHTML = `
+                <img src="${m.poster}">
+                <div class="overlay">${m.title}</div>
+            `;
+
+            card.onclick = ()=>{
+                current = m;
+                document.getElementById("modal").style.display = "block";
+                document.getElementById("title").innerText = m.title;
+                document.getElementById("story").innerText = m.story;
+            };
+
+            row.appendChild(card);
+        });
+
+        container.appendChild(title);
+        container.appendChild(row);
+    }
 });
 
 function closeModal(){
-    document.getElementById("modal").style.display="none";
+    document.getElementById("modal").style.display = "none";
 }
 
 function play(){
-    window.location="/play/"+current.id+"?uid="+uid;
+    window.location = "/play/" + current.id + "?uid=" + uid;
 }
 </script>
 
