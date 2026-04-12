@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTIMATE CLEAN SYSTEM)
+# 🎬 NETFLIX BOT FINAL (HERO + AUTOPLAY + FULL UI)
 # ================================
 
 import os
@@ -7,18 +7,10 @@ import json
 import requests
 import re
 from flask import Flask, request
-from openai import OpenAI
-
-# ================================
-# CONFIG
-# ================================
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 CHANNEL = "-1003526259129"
-
-TMDB_KEY = os.getenv("TMDB_KEY")  # optional
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DATA_FILE = "data.json"
 
@@ -36,64 +28,14 @@ def safe_post(method, payload):
         pass
 
 # ================================
-# 🎬 POSTER
+# POSTER
 # ================================
 
 def get_poster(title):
-    if not TMDB_KEY:
-        return f"https://dummyimage.com/600x900/000/fff&text={title.replace(' ','+')}"
-
-    try:
-        r = requests.get(
-            "https://api.themoviedb.org/3/search/movie",
-            params={"api_key": TMDB_KEY, "query": title},
-            timeout=5
-        ).json()
-
-        if r.get("results"):
-            p = r["results"][0].get("poster_path")
-            if p:
-                return f"https://image.tmdb.org/t/p/w500{p}"
-    except:
-        pass
-
     return f"https://dummyimage.com/600x900/000/fff&text={title.replace(' ','+')}"
 
 # ================================
-# 🧠 AI GENERATOR
-# ================================
-
-def ai_generate(title):
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{
-                "role": "user",
-                "content": f"Film: {title}\nGenre, Laufzeit, Regisseur, Rating, Story"
-            }]
-        )
-
-        text = res.choices[0].message.content
-
-        return {
-            "genre": ["Action","Drama"],
-            "runtime": "120 Min",
-            "director": "-",
-            "rating": "7.0",
-            "story": text
-        }
-
-    except:
-        return {
-            "genre": ["Action"],
-            "runtime": "120 Min",
-            "director": "-",
-            "rating": "7.0",
-            "story": "-"
-        }
-
-# ================================
-# 🧠 PARSER (DEIN FORMAT)
+# PARSER (DEIN FORMAT)
 # ================================
 
 def extract_movie(text):
@@ -138,7 +80,21 @@ def get_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# SAVE
+# SERIES DETECT
+# ================================
+
+def detect_series(title):
+    t = title.lower()
+    if "bourne" in t:
+        return "Bourne"
+    if "jurassic" in t:
+        return "Jurassic"
+    if "avengers" in t or "marvel" in t:
+        return "Marvel"
+    return None
+
+# ================================
+# SAVE MOVIE
 # ================================
 
 def save_movie(msg):
@@ -147,7 +103,6 @@ def save_movie(msg):
     caption = msg.get("caption") or ""
 
     info = extract_movie(caption)
-
     if not info:
         return None
 
@@ -158,30 +113,17 @@ def save_movie(msg):
     entry = {
         "id": get_id(data),
         **info,
-        "file_id": video["file_id"] if video else None,
+        "file_id": video["file_id"],
         "views": 0,
         "series": detect_series(info["title"])
     }
 
     data["movies"].append(entry)
     save_data(data)
-
     return entry
 
 # ================================
-# SERIES
-# ================================
-
-def detect_series(title):
-    t = title.lower()
-    if "bourne" in t:
-        return "Bourne"
-    if "jurassic" in t:
-        return "Jurassic"
-    return None
-
-# ================================
-# CONTINUE
+# CONTINUE WATCHING
 # ================================
 
 def update_continue(uid, mid):
@@ -196,29 +138,27 @@ def get_continue(uid, data):
     return [m for m in data["movies"] if m["id"] in ids]
 
 # ================================
-# UI
+# HERO BANNER
 # ================================
 
-def show_row(chat_id, title, movies):
-    safe_post("sendMessage", {
+def show_hero(chat_id, movie):
+    safe_post("sendPhoto", {
         "chat_id": chat_id,
-        "text": f"━━━ {title} ━━━"
+        "photo": get_poster(movie["title"]),
+        "caption": f"🔥 {movie['title']}",
+        "reply_markup": {
+            "inline_keyboard": [[
+                {"text": "▶️ Abspielen", "callback_data": f"play_{movie['id']}"}
+            ]]
+        }
     })
 
-    buttons = [[
-        {"text": m["title"][:15], "callback_data": f"movie_{m['title']}"}
-        for m in movies[:5]
-    ]]
-
-    safe_post("sendMessage", {
-        "chat_id": chat_id,
-        "text": " ",
-        "reply_markup": {"inline_keyboard": buttons}
-    })
+# ================================
+# SWIPE
+# ================================
 
 def show_swipe(chat_id, movies, i=0):
     SESSION[chat_id] = movies
-
     if not movies:
         return
 
@@ -243,40 +183,50 @@ def show_swipe(chat_id, movies, i=0):
     })
 
 # ================================
-# CARD (FINAL DESIGN)
+# FULLSCREEN CARD
 # ================================
 
-def send_card(chat_id, m):
+def send_fullscreen(chat_id, m):
     caption = f"""🎬 {m['title'].upper()} ({m.get('year','')})
-🔥 4K • {' • '.join(m.get('genre',[]))}
-━━━━━━━━━━━━━━
-⭐ {m.get('rating','-')} • ⏱ {m.get('runtime','-')} • 🔞 FSK 16
+
+🔥 {' • '.join(m.get('genre',[]))}
+⭐ {m.get('rating','-')} • ⏱ {m.get('runtime','-')}
+
 🎥 {m.get('director','-')}
+
 ━━━━━━━━━━━━━━
 📖 STORY
 {m.get('story','-')}
-━━━━━━━━━━━━━━
-▶️ #{m['id']}
-━━━━━━━━━━━━━━
-{' '.join([f'#{t}' for t in m.get('tags',[])])} #Neu
-@LibraryOfLegends"""
+━━━━━━━━━━━━━━"""
 
     safe_post("sendPhoto", {
         "chat_id": chat_id,
-        "photo": get_poster(m["title"])
+        "photo": get_poster(m["title"]),
+        "caption": caption,
+        "reply_markup": {
+            "inline_keyboard": [
+                [{"text": "▶️ Abspielen", "callback_data": f"play_{m['id']}"}],
+                [{"text": "🔙 Home", "callback_data": "home"}]
+            ]
+        }
     })
 
-    if m.get("file_id"):
-        safe_post("sendVideo", {
-            "chat_id": chat_id,
-            "video": m["file_id"],
-            "caption": caption
-        })
-    else:
-        safe_post("sendMessage", {
-            "chat_id": chat_id,
-            "text": caption
-        })
+# ================================
+# AUTOPLAY NEXT
+# ================================
+
+def get_next_episode(current, data):
+    if not current.get("series"):
+        return None
+
+    series = [m for m in data["movies"] if m.get("series") == current["series"]]
+    series.sort(key=lambda x: x["id"])
+
+    for i, m in enumerate(series):
+        if m["id"] == current["id"] and i < len(series)-1:
+            return series[i+1]
+
+    return None
 
 # ================================
 # HOME
@@ -284,20 +234,21 @@ def send_card(chat_id, m):
 
 def show_home(chat_id):
     data = load_data()
+    movies = data["movies"]
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 Netflix Style"
+        "text": "🎬 Library of Legends\n🔥 Netflix"
     })
+
+    if movies:
+        show_hero(chat_id, movies[-1])  # letzter Film = Banner
 
     cont = get_continue(chat_id, data)
     if cont:
-        show_row(chat_id, "▶️ Weiter schauen", cont)
+        show_swipe(chat_id, cont)
 
-    top = sorted(data["movies"], key=lambda x: x["views"], reverse=True)
-
-    show_swipe(chat_id, top[:10])
-    show_row(chat_id, "🆕 Neu", list(reversed(data["movies"]))[:10])
+    show_swipe(chat_id, movies[::-1])
 
 # ================================
 # WEBHOOK
@@ -314,7 +265,10 @@ def webhook():
         chat_id = update["callback_query"]["message"]["chat"]["id"]
         cb = update["callback_query"]["data"]
 
-        if cb.startswith("swipe_"):
+        if cb == "home":
+            show_home(chat_id)
+
+        elif cb.startswith("swipe_"):
             i = int(cb.split("_")[1])
             show_swipe(chat_id, SESSION.get(chat_id, []), i)
 
@@ -326,7 +280,32 @@ def webhook():
                 update_continue(chat_id, m["id"])
                 m["views"] += 1
                 save_data(data)
-                send_card(chat_id, m)
+
+                send_fullscreen(chat_id, m)
+
+        elif cb.startswith("play_"):
+            mid = cb.split("_")[1]
+            m = next((x for x in data["movies"] if x["id"] == mid), None)
+
+            if m:
+                safe_post("sendVideo", {
+                    "chat_id": chat_id,
+                    "video": m["file_id"],
+                    "caption": f"▶️ {m['title']}"
+                })
+
+                next_ep = get_next_episode(m, data)
+
+                if next_ep:
+                    safe_post("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": f"▶️ Nächste Folge: {next_ep['title']}",
+                        "reply_markup": {
+                            "inline_keyboard": [[
+                                {"text": "▶️ Weiter", "callback_data": f"play_{next_ep['id']}"}
+                            ]]
+                        }
+                    })
 
     if "message" in update:
         msg = update["message"]
@@ -334,37 +313,14 @@ def webhook():
         if msg.get("text") == "/start":
             show_home(msg["chat"]["id"])
 
-        if msg.get("text", "").startswith("/add"):
-            title = msg["text"].replace("/add","").strip()
-            ai = ai_generate(title)
-
-            data = load_data()
-
-            entry = {
-                "id": get_id(data),
-                "title": title,
-                "year": "",
-                "genre": ai["genre"],
-                "runtime": ai["runtime"],
-                "director": ai["director"],
-                "rating": ai["rating"],
-                "story": ai["story"],
-                "tags": ai["genre"],
-                "file_id": None,
-                "views": 0
-            }
-
-            data["movies"].append(entry)
-            save_data(data)
-
-            send_card(msg["chat"]["id"], entry)
-
         if "video" in msg or "document" in msg:
             m = save_movie(msg)
 
             if m:
-                send_card(msg["chat"]["id"], m)
-                send_card(CHANNEL, m)
+                safe_post("sendMessage", {
+                    "chat_id": msg["chat"]["id"],
+                    "text": f"✅ Gespeichert: {m['title']}"
+                })
 
     return "ok"
 
