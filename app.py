@@ -75,14 +75,23 @@ def extract_data(caption):
     if not caption:
         return "Film", "-", "General"
 
+    import re
+
+    # 🎬 Titel
     title_match = re.search(r"🎬\s*(.*?)\s*\(", caption)
     title = title_match.group(1) if title_match else caption.split("\n")[0]
 
+    # 📖 Story
     story_match = re.search(r"STORY\s*(.*?)\s*(▶️|#|$)", caption, re.S)
     story = story_match.group(1).strip() if story_match else "-"
 
-    tags = re.findall(r"#(\w+)", caption)
-    category = tags[0] if tags else "General"
+    # 🏷 Kategorie (nur echte Tags, keine Zahlen!)
+    tags = re.findall(r"#([A-Za-z]+)", caption)
+
+    if tags:
+        category = tags[0]
+    else:
+        category = "General"
 
     return title.strip(), story.strip(), category
 
