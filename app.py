@@ -1,5 +1,5 @@
 # ================================
-# 🎬 ULTIMATE FINAL BOSS SYSTEM
+# 🎬 ULTIMATE FINAL SYSTEM (ALL-IN)
 # ================================
 
 import os
@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, Response, render_template_string
 app = Flask(__name__)
 
 TOKEN = os.getenv("BOT_TOKEN")
+TMDB_KEY = os.getenv("TMDB_KEY")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 DB = "netflix.db"
@@ -33,6 +34,7 @@ def init_db():
         title TEXT,
         story TEXT,
         file_id TEXT,
+        cover TEXT,
         progress INTEGER
     )
     """)
@@ -41,6 +43,26 @@ def init_db():
     con.close()
 
 init_db()
+
+# ================================
+# 🎬 TMDB COVER
+# ================================
+
+def get_cover(title):
+    try:
+        r = requests.get(
+            "https://api.themoviedb.org/3/search/movie",
+            params={"api_key": TMDB_KEY, "query": title}
+        ).json()
+
+        if r.get("results"):
+            path = r["results"][0].get("poster_path")
+            if path:
+                return "https://image.tmdb.org/t/p/w500" + path
+    except:
+        pass
+
+    return "https://placehold.co/300x450/111/fff?text=" + title.replace(" ","+")
 
 # ================================
 # PARSER
@@ -67,17 +89,19 @@ def save(msg):
         return
 
     title, story = extract_data(msg.get("caption",""))
+    cover = get_cover(title)
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO movies VALUES(?,?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?,?)
     """, (
         str(int(time.time())),
         title,
         story,
         msg["video"]["file_id"],
+        cover,
         0
     ))
 
@@ -104,9 +128,6 @@ def stream(id):
     m = cur.execute("SELECT * FROM movies WHERE id=?", (id,)).fetchone()
     con.close()
 
-    if not m:
-        return "Not found"
-
     file_url = get_file_url(m[3])
 
     def generate():
@@ -132,7 +153,8 @@ def movies():
             "id": r[0],
             "title": r[1],
             "story": r[2],
-            "progress": r[4]
+            "cover": r[4],
+            "progress": r[5]
         } for r in rows
     ])
 
@@ -158,7 +180,7 @@ def progress():
     return "ok"
 
 # ================================
-# UI (FINAL BOSS)
+# UI FINAL
 # ================================
 
 @app.route("/")
@@ -171,13 +193,23 @@ def home():
 <style>
 body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
+/* SEARCH */
+.search {
+    padding:15px;
+    width:100%;
+    background:#111;
+    border:none;
+    color:white;
+    font-size:16px;
+}
+
 /* HERO */
 .hero {
-    height:70vh;
+    height:60vh;
     display:flex;
     align-items:end;
-    padding:40px;
-    background:linear-gradient(to top, black, transparent), #111;
+    padding:30px;
+    background-size:cover;
     font-size:40px;
 }
 
@@ -192,65 +224,49 @@ body {margin:0;background:#141414;color:white;font-family:sans-serif}
 .card {
     min-width:150px;
     height:220px;
-    margin-right:12px;
+    margin-right:10px;
+    background-size:cover;
     border-radius:10px;
-    background:#222;
     position:relative;
     cursor:pointer;
     transition:0.3s;
-    overflow:hidden;
 }
 
 .card:hover {
     transform:scale(1.2);
-    z-index:10;
 }
 
-/* TITLE OVERLAY */
+/* OVERLAY */
 .card-title {
     position:absolute;
     bottom:0;
-    width:100%;
     background:linear-gradient(to top, black, transparent);
+    width:100%;
     padding:10px;
     font-size:12px;
-}
-
-/* PROGRESS */
-.progress {
-    height:4px;
-    background:red;
-    position:absolute;
-    bottom:0;
-    left:0;
 }
 
 /* MODAL */
 .modal {
     position:fixed;
-    top:0;
-    left:0;
     width:100%;
     height:100%;
     background:black;
     display:none;
+    top:0;
+    left:0;
     padding:20px;
-    z-index:100;
 }
 
-video {
-    width:100%;
-}
+video {width:100%}
 </style>
 
 <body>
 
+<input class="search" placeholder="🔍 Suche..." oninput="search(this.value)">
+
 <div id="hero" class="hero"></div>
 
-<h2 style="padding-left:20px">▶️ Continue Watching</h2>
-<div id="continue" class="row"></div>
-
-<h2 style="padding-left:20px">🔥 Alle Filme</h2>
 <div id="row" class="row"></div>
 
 <div id="modal" class="modal">
@@ -261,61 +277,50 @@ video {
 </div>
 
 <script>
+let DATA = [];
+
 fetch("/movies")
 .then(r=>r.json())
 .then(data=>{
+    DATA = data;
+    render(data);
+});
+
+function render(data){
+    let row = document.getElementById("row");
+    row.innerHTML="";
 
     if(data.length){
+        document.getElementById("hero").style.backgroundImage =
+            "url("+data[0].cover+")";
         document.getElementById("hero").innerText = data[0].title;
     }
 
-    let row = document.getElementById("row");
-    let cont = document.getElementById("continue");
-
     data.forEach(m=>{
-
         let card = document.createElement("div");
-        card.className = "card";
+        card.className="card";
+        card.style.backgroundImage = "url("+m.cover+")";
 
-        card.innerHTML = `
-            <div class="card-title">${m.title}</div>
-        `;
-
-        let p = document.createElement("div");
-        p.className = "progress";
-        p.style.width = m.progress + "%";
-        card.appendChild(p);
+        card.innerHTML = `<div class="card-title">${m.title}</div>`;
 
         card.onclick = ()=>{
             document.getElementById("modal").style.display="block";
-            document.getElementById("title").innerText = m.title;
-            document.getElementById("story").innerText = m.story;
+            document.getElementById("title").innerText=m.title;
+            document.getElementById("story").innerText=m.story;
 
-            let video = document.getElementById("video");
-            video.src = "/stream/" + m.id;
-
-            video.ontimeupdate = ()=>{
-                let percent = (video.currentTime / video.duration)*100;
-
-                fetch("/progress", {
-                    method:"POST",
-                    headers:{"Content-Type":"application/json"},
-                    body:JSON.stringify({
-                        id: m.id,
-                        progress: percent
-                    })
-                });
-            };
+            document.getElementById("video").src="/stream/"+m.id;
         };
 
         row.appendChild(card);
-
-        if(m.progress > 5 && m.progress < 95){
-            cont.appendChild(card.cloneNode(true));
-        }
     });
+}
 
-});
+function search(q){
+    let filtered = DATA.filter(m =>
+        m.title.toLowerCase().includes(q.toLowerCase())
+    );
+    render(filtered);
+}
 
 function closeModal(){
     document.getElementById("modal").style.display="none";
@@ -333,10 +338,8 @@ function closeModal(){
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = request.get_json()
-
     if "message" in update:
         save(update["message"])
-
     return "ok"
 
 # ================================
