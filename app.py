@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT + WEB APP (FINAL)
+# 🎬 NETFLIX SYSTEM (DEV TOOLKIT MODE)
 # ================================
 
 import os
@@ -8,7 +8,7 @@ import requests
 import re
 import time
 import threading
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
@@ -16,34 +16,44 @@ TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}" if TOKEN else None
 DATA_FILE = "data.json"
 
+LOGS = []
+
+# ================================
+# 🧠 LOGGER (LIVE DEBUG)
+# ================================
+
+def log(msg):
+    print(msg)
+    LOGS.append(str(msg))
+    if len(LOGS) > 100:
+        LOGS.pop(0)
+
 # ================================
 # SAFE START
 # ================================
 
 if not TOKEN:
-    print("❌ BOT_TOKEN fehlt!")
+    log("❌ BOT_TOKEN fehlt!")
 else:
-    print("✅ BOT TOKEN OK")
+    log("✅ BOT TOKEN OK")
 
 # ================================
-# DATA
+# DATA SAFE
 # ================================
 
 def load_data():
     try:
         if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, "r") as f:
-                return json.load(f)
+            return json.load(open(DATA_FILE))
     except Exception as e:
-        print("LOAD ERROR:", e)
+        log(f"LOAD ERROR: {e}")
     return {"movies": []}
 
 def save_data(data):
     try:
-        with open(DATA_FILE, "w") as f:
-            json.dump(data, f)
+        json.dump(data, open(DATA_FILE, "w"))
     except Exception as e:
-        print("SAVE ERROR:", e)
+        log(f"SAVE ERROR: {e}")
 
 def get_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
@@ -60,13 +70,14 @@ def safe(pattern, text):
         return "-"
 
 # ================================
-# PARSER (DEIN FORMAT)
+# PARSER
 # ================================
 
 def extract(text):
     try:
         t = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", text)
         if not t:
+            log("❌ NO TITLE MATCH")
             return None
 
         return {
@@ -77,8 +88,9 @@ def extract(text):
             "genre": re.findall(r"#(\w+)", text)[:2] or ["Unknown"],
             "story": safe(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text)
         }
+
     except Exception as e:
-        print("PARSE ERROR:", e)
+        log(f"PARSER ERROR: {e}")
         return None
 
 # ================================
@@ -89,46 +101,26 @@ def get_poster(title):
     return f"https://image.pollinations.ai/prompt/{title}+movie+poster"
 
 # ================================
-# WEB APP
+# DEBUG ROUTES
 # ================================
 
 @app.route("/")
 def home():
-    return render_template_string("""
-    <html>
-    <head>
-    <style>
-    body{background:#141414;color:white;font-family:sans-serif}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,180px);gap:15px;padding:20px}
-    .card img{width:180px;border-radius:10px}
-    .card:hover{transform:scale(1.2)}
-    </style>
-    </head>
-    <body>
+    return "🔥 DEV TOOLKIT RUNNING"
 
-    <h1>🎬 Netflix System</h1>
-    <div id="grid" class="grid"></div>
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "movies": len(load_data()["movies"])
+    })
 
-    <script>
-    fetch('/api/movies')
-    .then(r=>r.json())
-    .then(data=>{
-        let grid=document.getElementById("grid");
-        data.forEach(m=>{
-            let div=document.createElement("div");
-            div.className="card";
-            div.innerHTML=`<img src="${m.poster}">`;
-            grid.appendChild(div);
-        });
-    });
-    </script>
-
-    </body>
-    </html>
-    """)
+@app.route("/logs")
+def logs():
+    return "<br>".join(LOGS)
 
 @app.route("/api/movies")
-def api_movies():
+def movies():
     return jsonify(load_data()["movies"])
 
 # ================================
@@ -139,7 +131,7 @@ def api_movies():
 def webhook():
     try:
         update = request.get_json()
-        print("UPDATE:", update)
+        log(f"UPDATE: {update}")
 
         if not update or "message" not in update:
             return "ok"
@@ -150,6 +142,8 @@ def webhook():
         if "video" in msg or "document" in msg:
             data = load_data()
             caption = msg.get("caption", "")
+
+            log(f"CAPTION: {caption}")
 
             info = extract(caption)
 
@@ -181,6 +175,8 @@ def webhook():
             data["movies"].append(entry)
             save_data(data)
 
+            log(f"✅ SAVED: {info['title']}")
+
             requests.post(f"{URL}/sendMessage", json={
                 "chat_id": chat_id,
                 "text": f"✅ Gespeichert: {info['title']}"
@@ -189,11 +185,11 @@ def webhook():
         return "ok"
 
     except Exception as e:
-        print("WEBHOOK ERROR:", e)
+        log(f"WEBHOOK ERROR: {e}")
         return "ok"
 
 # ================================
-# 🔄 KEEP ALIVE (ANTI SLEEP)
+# 🔄 KEEP ALIVE
 # ================================
 
 def keep_alive():
@@ -202,9 +198,9 @@ def keep_alive():
             url = os.getenv("WEBHOOK_URL")
             if url:
                 requests.get(url)
-                print("🔄 KEEP ALIVE")
+                log("🔄 KEEP ALIVE PING")
         except Exception as e:
-            print("PING ERROR:", e)
+            log(f"PING ERROR: {e}")
 
         time.sleep(300)
 
@@ -215,17 +211,17 @@ threading.Thread(target=keep_alive, daemon=True).start()
 # ================================
 
 if __name__ == "__main__":
-    print("🔥 FINAL SYSTEM START")
+    log("🔥 DEV TOOLKIT START")
 
-    if TOKEN and os.getenv("WEBHOOK_URL"):
-        try:
+    try:
+        if TOKEN and os.getenv("WEBHOOK_URL"):
             webhook_url = f"{os.getenv('WEBHOOK_URL')}/webhook/{TOKEN}"
-            print("SET WEBHOOK:", webhook_url)
+            log(f"SET WEBHOOK: {webhook_url}")
             requests.get(f"{URL}/setWebhook?url={webhook_url}")
-        except Exception as e:
-            print("WEBHOOK ERROR:", e)
+    except Exception as e:
+        log(f"WEBHOOK ERROR: {e}")
 
     port = int(os.environ.get("PORT", 10000))
-    print("PORT:", port)
+    log(f"PORT: {port}")
 
     app.run(host="0.0.0.0", port=port, debug=False)
