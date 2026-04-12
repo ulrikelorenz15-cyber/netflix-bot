@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (MENU + UI FINAL + ULTRA MATCH)
+# 🎬 NETFLIX BOT FINAL (MENU + UI FINAL + ULTRA MATCH + AUTO DB + NETFLIX UI)
 # ================================
 
 import os
@@ -41,7 +41,27 @@ def clean_title(raw):
     return " ".join([w for w in raw.split() if w.lower() not in blacklist])
 
 # ================================
-# 🧠 NEW: FUZZY MATCH
+# 🧠 AUTO DB (NEU)
+# ================================
+
+AUTO_DB = {
+    "bourne identität": "The Bourne Identity",
+    "bourne": "The Bourne Identity",
+    "jurassic": "Jurassic Park",
+    "havoc": "Havoc",
+    "godfather": "The Godfather",
+    "shawshank": "The Shawshank Redemption"
+}
+
+def auto_db_match(title):
+    t = title.lower()
+    for key in AUTO_DB:
+        if key in t:
+            return AUTO_DB[key]
+    return None
+
+# ================================
+# 🧠 FUZZY MATCH
 # ================================
 
 def fuzzy_match(title, data):
@@ -50,7 +70,7 @@ def fuzzy_match(title, data):
     return match[0] if match else None
 
 # ================================
-# 🧠 NEW: AI DETECT
+# 🧠 AI DETECT
 # ================================
 
 def ai_detect_title(raw_text):
@@ -68,7 +88,7 @@ def ai_detect_title(raw_text):
         return None
 
 # ================================
-# 🧠 NEW: MULTI TRY
+# 🧠 MULTI TRY
 # ================================
 
 def try_multiple_titles(title):
@@ -84,6 +104,40 @@ def try_multiple_titles(title):
         if movie:
             return movie
     return None
+
+# ================================
+# 🎞 NETFLIX ROW SYSTEM (NEU)
+# ================================
+
+def show_row(chat_id, title, movies):
+    safe_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": f"━━━ {title} ━━━"
+    })
+
+    buttons = []
+    for m in movies[:5]:
+        buttons.append({
+            "text": m["title"][:15],
+            "callback_data": f"movie_{m['title']}"
+        })
+
+    safe_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": " ",
+        "reply_markup": {"inline_keyboard": [buttons]}
+    })
+
+# ================================
+# 🏆 TOP SYSTEM (NEU)
+# ================================
+
+def get_top_movies(data):
+    return sorted(
+        data["movies"],
+        key=lambda x: x.get("views", 0),
+        reverse=True
+    )[:10]
 
 # ================================
 # MAIN MENU
@@ -187,97 +241,25 @@ def get_series_list(data, name):
     return [m for m in data["movies"] if m.get("series") == name]
 
 # ================================
-# GRID (MIT NAV)
-# ================================
-
-def show_grid(chat_id, movies):
-    SESSION[chat_id] = movies
-
-    for m in movies[:3]:
-        movie = get_movie(m["title"])
-        if not movie:
-            continue
-
-        safe_post("sendPhoto", {
-            "chat_id": chat_id,
-            "photo": movie.get("Poster"),
-            "caption": f"🎬 {movie['Title']} • ⭐ {movie['imdbRating']}",
-            "reply_markup": {
-                "inline_keyboard": [
-                    [{"text": "▶️ Öffnen", "callback_data": f"movie_{movie['Title']}"}],
-                    [
-                        {"text": "🏠 Home", "callback_data": "home"},
-                        {"text": "🔙 Menü", "callback_data": "menu"}
-                    ]
-                ]
-            }
-        })
-
-# ================================
-# SERIES ROW
-# ================================
-
-def show_series_row(chat_id, data):
-    series = list(set([m.get("series") for m in data["movies"] if m.get("series")]))
-
-    buttons = []
-    for s in series:
-        buttons.append([{"text": f"🎞 {s}", "callback_data": f"series_{s}"}])
-
-    if buttons:
-        safe_post("sendMessage", {
-            "chat_id": chat_id,
-            "text": "🎞 Reihen",
-            "reply_markup": {"inline_keyboard": buttons}
-        })
-
-# ================================
-# HOME
+# HOME (UPGRADE)
 # ================================
 
 def show_home(chat_id):
     data = load_data()
-    rankings = get_rankings(data)
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
         "text": "🎬 Library of Legends\n🔥 Netflix Style"
     })
 
-    safe_post("sendMessage", {"chat_id": chat_id, "text": "🔥 Trending"})
-    show_grid(chat_id, rankings["🔥 Trending"])
-
-    safe_post("sendMessage", {"chat_id": chat_id, "text": "🆕 Neu"})
-    show_grid(chat_id, rankings["🆕 Neu"])
+    show_row(chat_id, "🔥 Trending", get_rankings(data)["🔥 Trending"])
+    show_row(chat_id, "🆕 Neu", get_rankings(data)["🆕 Neu"])
+    show_row(chat_id, "🏆 Top", get_top_movies(data))
 
     show_series_row(chat_id, data)
 
 # ================================
-# CARD
-# ================================
-
-def send_card(chat_id, movie, local):
-    caption = f"""🎬 {movie['Title']} ({movie['Year']})
-
-⭐ {movie['imdbRating']} • ⏱ {movie.get('Runtime')}
-🎥 {movie.get('Director')}
-
-▶️ #{local['id']}"""
-
-    safe_post("sendVideo", {
-        "chat_id": chat_id,
-        "video": local["file_id"],
-        "caption": caption,
-        "reply_markup": {
-            "inline_keyboard": [
-                [{"text": "🏠 Home", "callback_data": "home"}],
-                [{"text": "🔙 Menü", "callback_data": "menu"}]
-            ]
-        }
-    })
-
-# ================================
-# VIDEO (ULTRA MATCH ENGINE)
+# VIDEO (ULTRA MATCH UPGRADE)
 # ================================
 
 def handle_video(msg):
@@ -293,17 +275,23 @@ def handle_video(msg):
         if local:
             movie = try_multiple_titles(local)
 
+    # 1.5 AUTO DB (NEU)
+    if not movie and raw:
+        auto = auto_db_match(raw)
+        if auto:
+            movie = try_multiple_titles(auto)
+
     # 2 NORMAL
     if not movie and raw:
         movie = try_multiple_titles(raw)
 
-    # 3 FUZZY (NEU)
+    # 3 FUZZY
     if not movie and raw:
         fuzzy = fuzzy_match(raw, data)
         if fuzzy:
             movie = get_movie(fuzzy)
 
-    # 4 AI (NEU)
+    # 4 AI
     if not movie and raw:
         ai_title = ai_detect_title(raw)
         if ai_title:
@@ -334,66 +322,3 @@ def handle_video(msg):
 
     send_card(msg["chat"]["id"], movie, entry)
     send_card(CHANNEL, movie, entry)
-
-# ================================
-# WEBHOOK
-# ================================
-
-app = Flask(__name__)
-
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    update = request.get_json()
-    data = load_data()
-
-    if "callback_query" in update:
-        chat_id = update["callback_query"]["message"]["chat"]["id"]
-        cb = update["callback_query"]["data"]
-
-        if cb == "menu":
-            show_main_menu(chat_id)
-
-        elif cb == "home":
-            show_home(chat_id)
-
-        elif cb == "menu_trending":
-            show_grid(chat_id, get_rankings(data)["🔥 Trending"])
-
-        elif cb == "menu_new":
-            show_grid(chat_id, get_rankings(data)["🆕 Neu"])
-
-        elif cb == "menu_series":
-            show_series_row(chat_id, data)
-
-        elif cb.startswith("movie_"):
-            title = cb.replace("movie_", "")
-            m = next((x for x in data["movies"] if x["title"] == title), None)
-
-            if m:
-                movie = get_movie(title)
-                m["views"] += 1
-                save_data(data)
-                send_card(chat_id, movie, m)
-
-        elif cb.startswith("series_"):
-            name = cb.replace("series_", "")
-            show_grid(chat_id, get_series_list(data, name))
-
-    if "message" in update:
-        msg = update["message"]
-
-        if msg.get("text") == "/start":
-            show_main_menu(msg["chat"]["id"])
-
-        if "video" in msg or "document" in msg:
-            handle_video(msg)
-
-    return "ok"
-
-# ================================
-# START
-# ================================
-
-if __name__ == "__main__":
-    requests.get(f"{URL}/setWebhook?url={os.getenv('WEBHOOK_URL')}/webhook/{TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
