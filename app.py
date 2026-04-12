@@ -1,14 +1,16 @@
 # ================================
-# 🎬 ULTIMATE NETFLIX UI SYSTEM
+# 🎬 BACKEND (FLASK API)
 # ================================
 
 import os
 import sqlite3
 import requests
 import time
-from flask import Flask, request, jsonify, render_template_string, Response
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
@@ -32,7 +34,6 @@ def init_db():
         title TEXT,
         story TEXT,
         file_id TEXT,
-        views INTEGER,
         progress INTEGER DEFAULT 0
     )
     """)
@@ -43,26 +44,25 @@ def init_db():
 init_db()
 
 # ================================
-# SAVE
+# SAVE FROM TELEGRAM
 # ================================
 
 def save(msg):
     if "video" not in msg:
         return
 
-    title = msg.get("caption","Film").split("\n")[0]
+    title = msg.get("caption","Film").split("\\n")[0]
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO movies VALUES(?,?,?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?)
     """, (
         str(int(time.time())),
         title,
         msg.get("caption",""),
         msg["video"]["file_id"],
-        0,
         0
     ))
 
@@ -70,7 +70,7 @@ def save(msg):
     con.close()
 
 # ================================
-# TELEGRAM FILE
+# TELEGRAM FILE URL
 # ================================
 
 def get_file_url(file_id):
@@ -86,6 +86,7 @@ def get_file_url(file_id):
 def stream(id):
     con = db()
     cur = con.cursor()
+
     m = cur.execute("SELECT * FROM movies WHERE id=?", (id,)).fetchone()
     con.close()
 
@@ -105,28 +106,25 @@ def stream(id):
 # API
 # ================================
 
-@app.route("/api")
-def api():
+@app.route("/movies")
+def movies():
     con = db()
     cur = con.cursor()
 
     rows = cur.execute("SELECT * FROM movies").fetchall()
     con.close()
 
-    data = [{
-        "id": r[0],
-        "title": r[1],
-        "story": r[2],
-        "views": r[4],
-        "progress": r[5]
-    } for r in rows]
-
-    data.sort(key=lambda x: x["views"], reverse=True)
-
-    return jsonify(data)
+    return jsonify([
+        {
+            "id": r[0],
+            "title": r[1],
+            "story": r[2],
+            "progress": r[4]
+        } for r in rows
+    ])
 
 # ================================
-# SAVE PROGRESS
+# PROGRESS
 # ================================
 
 @app.route("/progress", methods=["POST"])
@@ -147,148 +145,6 @@ def progress():
     return "ok"
 
 # ================================
-# UI
-# ================================
-
-@app.route("/")
-def home():
-    return render_template_string("""
-<!DOCTYPE html>
-<html>
-<meta name="viewport" content="width=device-width">
-
-<style>
-body {margin:0;background:#141414;color:white;font-family:sans-serif}
-
-/* HERO */
-.hero {
-    height:60vh;
-    display:flex;
-    align-items:end;
-    padding:30px;
-    background:#222;
-    font-size:30px;
-}
-
-/* ROW */
-.row {
-    display:flex;
-    overflow-x:auto;
-    padding:20px;
-}
-
-/* CARD */
-.card {
-    margin-right:10px;
-    background:#222;
-    padding:15px;
-    cursor:pointer;
-    position:relative;
-}
-
-/* PROGRESS BAR */
-.progress {
-    height:4px;
-    background:red;
-    position:absolute;
-    bottom:0;
-    left:0;
-}
-
-/* MODAL */
-.modal {
-    position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    background:black;
-    display:none;
-    padding:20px;
-    z-index:10;
-}
-
-video {width:100%}
-</style>
-
-<body>
-
-<div id="hero" class="hero"></div>
-
-<h2 style="padding-left:20px">🔥 Trending</h2>
-<div id="row" class="row"></div>
-
-<div id="modal" class="modal">
-    <h1 id="title"></h1>
-    <p id="story"></p>
-    <video id="video" controls></video>
-    <button onclick="closeModal()">❌</button>
-</div>
-
-<script>
-let DATA = [];
-let current = null;
-
-fetch("/api")
-.then(r=>r.json())
-.then(data=>{
-    DATA = data;
-
-    if(data.length){
-        document.getElementById("hero").innerText = data[0].title;
-    }
-
-    let row = document.getElementById("row");
-
-    data.forEach(m=>{
-        let card = document.createElement("div");
-        card.className = "card";
-        card.innerText = m.title;
-
-        // Progress bar
-        let p = document.createElement("div");
-        p.className = "progress";
-        p.style.width = m.progress + "%";
-        card.appendChild(p);
-
-        card.onclick = ()=>{
-            current = m;
-
-            document.getElementById("modal").style.display="block";
-            document.getElementById("title").innerText = m.title;
-            document.getElementById("story").innerText = m.story;
-
-            let video = document.getElementById("video");
-            video.src = "/stream/" + m.id;
-
-            video.ontimeupdate = ()=>{
-                let percent = (video.currentTime / video.duration) * 100;
-
-                fetch("/progress", {
-                    method:"POST",
-                    headers:{"Content-Type":"application/json"},
-                    body:JSON.stringify({
-                        id: m.id,
-                        progress: percent
-                    })
-                });
-            };
-        };
-
-        row.appendChild(card);
-    });
-});
-
-function closeModal(){
-    document.getElementById("modal").style.display="none";
-}
-</script>
-
-</body>
-</html>
-""")
-
-# ================================
 # WEBHOOK
 # ================================
 
@@ -306,7 +162,5 @@ def webhook():
 # ================================
 
 if __name__ == "__main__":
-    if TOKEN and os.getenv("WEBHOOK_URL"):
-        requests.get(f"{URL}/setWebhook?url={os.getenv('WEBHOOK_URL')}/webhook")
-
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
+    port = int(os.environ.get("PORT",10000))
+    app.run(host="0.0.0.0", port=port)
