@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX FINAL UI SYSTEM
+# 🎬 NETFLIX FINAL SYSTEM (REAL UI + TMDB)
 # ================================
 
 import os
@@ -16,8 +16,10 @@ TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}" if TOKEN else None
 DATA_FILE = "data.json"
 
-LOGS = []
+TMDB_KEY = os.getenv("TMDB_KEY")
+
 USER_STATE = {}
+LOGS = []
 
 # ================================
 # LOGGER
@@ -37,29 +39,39 @@ def load_data():
     try:
         if os.path.exists(DATA_FILE):
             return json.load(open(DATA_FILE))
-    except Exception as e:
-        log(f"LOAD ERROR: {e}")
+    except:
+        pass
     return {"movies": []}
 
 def save_data(data):
-    try:
-        json.dump(data, open(DATA_FILE, "w"))
-    except Exception as e:
-        log(f"SAVE ERROR: {e}")
+    json.dump(data, open(DATA_FILE, "w"))
 
 def get_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
+
+# ================================
+# TMDB COVER
+# ================================
+
+def get_tmdb_poster(title):
+    try:
+        url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_KEY}&query={title}"
+        r = requests.get(url).json()
+
+        if r["results"]:
+            return "https://image.tmdb.org/t/p/w500" + r["results"][0]["poster_path"]
+    except:
+        pass
+
+    return "https://dummyimage.com/300x450/000/fff&text=No+Cover"
 
 # ================================
 # SAFE REGEX
 # ================================
 
 def safe(pattern, text):
-    try:
-        m = re.search(pattern, text, re.S)
-        return m.group(1).strip() if m else "-"
-    except:
-        return "-"
+    m = re.search(pattern, text, re.S)
+    return m.group(1).strip() if m else "-"
 
 # ================================
 # PARSER (FIXED)
@@ -78,8 +90,10 @@ def extract(text):
             if g:
                 genres = [x.strip() for x in g.group(1).split("•")]
 
+        genres = [g for g in genres if not g.isdigit()]
+
         if not genres:
-            genres = ["Action", "Unknown"]
+            genres = ["Action"]
 
         return {
             "title": t.group(1).strip(),
@@ -95,38 +109,14 @@ def extract(text):
         return None
 
 # ================================
-# POSTER
-# ================================
-
-def get_poster(title):
-    return f"https://image.pollinations.ai/prompt/{title}+movie+poster"
-
-# ================================
-# SCORING (TRENDING)
+# SCORE (TRENDING)
 # ================================
 
 def score(m):
     return m["views"] * 2 + (5 - (time.time() - m["timestamp"]) / 86400)
 
 # ================================
-# CONTINUE WATCHING
-# ================================
-
-def update_continue(uid, mid):
-    USER_STATE.setdefault(uid, [])
-
-    if mid in USER_STATE[uid]:
-        USER_STATE[uid].remove(mid)
-
-    USER_STATE[uid].insert(0, mid)
-    USER_STATE[uid] = USER_STATE[uid][:5]
-
-def get_continue(uid, data):
-    ids = USER_STATE.get(uid, [])
-    return [m for m in data["movies"] if m["id"] in ids]
-
-# ================================
-# WEB UI (NETFLIX STYLE)
+# WEB UI (NETFLIX)
 # ================================
 
 @app.route("/")
@@ -144,17 +134,22 @@ def home():
     <html>
     <head>
     <style>
-    body {background:#141414;color:white;font-family:sans-serif}
-    h2 {margin-left:20px}
-    .row {display:flex;overflow-x:auto;padding:20px}
+    body {background:#141414;color:white;font-family:sans-serif;margin:0}
+    .hero {height:300px;background-size:cover;display:flex;align-items:flex-end;padding:20px;font-size:30px;font-weight:bold}
+    .row {display:flex;overflow-x:auto;padding:10px 20px}
     .card {margin-right:10px;transition:0.3s}
-    .card img {width:150px;border-radius:8px}
-    .card:hover {transform:scale(1.2)}
+    .card img {width:140px;border-radius:8px}
+    .card:hover {transform:scale(1.3);z-index:2}
+    h2 {margin-left:20px}
     </style>
     </head>
     <body>
 
-    <h1 style="margin-left:20px;">🎬 Netflix UI</h1>
+    {% if trending %}
+    <div class="hero" style="background-image:url('{{trending[0].poster}}')">
+        {{trending[0].title}}
+    </div>
+    {% endif %}
 
     <h2>🔥 Trending</h2>
     <div class="row">
@@ -193,7 +188,7 @@ def logs():
     return "<br>".join(LOGS)
 
 # ================================
-# TELEGRAM
+# TELEGRAM WEBHOOK
 # ================================
 
 @app.route("/webhook", methods=["POST"])
@@ -231,7 +226,7 @@ def webhook():
                 "file_id": msg.get("video", msg.get("document"))["file_id"],
                 "views": 0,
                 "timestamp": time.time(),
-                "poster": get_poster(info["title"])
+                "poster": get_tmdb_poster(info["title"])
             }
 
             data["movies"].append(entry)
@@ -268,7 +263,7 @@ threading.Thread(target=keep_alive, daemon=True).start()
 # ================================
 
 if __name__ == "__main__":
-    log("🔥 FINAL UI SYSTEM START")
+    log("🔥 FINAL NETFLIX SYSTEM START")
 
     if TOKEN and os.getenv("WEBHOOK_URL"):
         requests.get(f"{URL}/setWebhook?url={os.getenv('WEBHOOK_URL')}/webhook")
