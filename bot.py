@@ -1,14 +1,16 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (FIX CLEAN)
+# 🎬 NETFLIX BOT FINAL (PRO UI)
 # ================================
 
 import os
 import json
 import requests
+import time
 from flask import Flask, request
 
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
+TMDB_KEY = os.getenv("TMDB_KEY")
 
 DATA_FILE = "data.json"
 
@@ -21,7 +23,6 @@ USER_STATE = {}
 
 def safe_post(method, payload):
     try:
-        print(f"[SEND] {method}")
         requests.post(f"{URL}/{method}", json=payload, timeout=5)
     except Exception as e:
         print("ERROR:", e)
@@ -39,51 +40,55 @@ def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
 # ================================
-# SAMPLE DATA (immer vorhanden)
+# POSTER (REAL)
 # ================================
 
-def ensure_data():
-    data = load_data()
+def get_poster(title):
+    try:
+        r = requests.get(
+            "https://api.themoviedb.org/3/search/movie",
+            params={"api_key": TMDB_KEY, "query": title},
+            timeout=5
+        ).json()
 
-    if not data["movies"]:
-        print("👉 Lade Demo Filme...")
+        if r.get("results"):
+            path = r["results"][0].get("poster_path")
+            if path:
+                return f"https://image.tmdb.org/t/p/w500{path}"
+    except:
+        pass
 
-        data["movies"] = [
-            {
-                "id": "0001",
-                "title": "Havoc",
-                "year": "2025",
-                "genre": ["Action", "Thriller"],
-                "rating": "7.4",
-                "runtime": "125 Min",
-                "story": "Ein Ermittler gerät in ein brutales Netz aus Gewalt.",
-                "file_id": None,
-                "views": 0
-            },
-            {
-                "id": "0002",
-                "title": "Fight Club",
-                "year": "1999",
-                "genre": ["Drama"],
-                "rating": "8.8",
-                "runtime": "139 Min",
-                "story": "Ein Mann gründet einen geheimen Fight Club.",
-                "file_id": None,
-                "views": 0
-            }
-        ]
-
-        save_data(data)
+    return f"https://dummyimage.com/600x900/000/fff&text={title}"
 
 # ================================
-# SCORE
+# TRENDING SYSTEM
 # ================================
 
-def get_top(data):
-    return sorted(data["movies"], key=lambda x: x["views"], reverse=True)
+def get_score(m):
+    # Views + Zeitbonus (neuere Filme pushen)
+    age_bonus = 1
+    if m.get("timestamp"):
+        age = time.time() - m["timestamp"]
+        age_bonus = max(1, 5 - (age / 86400))  # Tage
+
+    return m.get("views", 0) * 2 + age_bonus
+
+def get_trending(data):
+    return sorted(data["movies"], key=get_score, reverse=True)
 
 # ================================
-# CONTINUE
+# KATEGORIEN
+# ================================
+
+def get_categories(data):
+    cats = {}
+    for m in data["movies"]:
+        for g in m.get("genre", []):
+            cats.setdefault(g, []).append(m)
+    return cats
+
+# ================================
+# CONTINUE WATCHING
 # ================================
 
 def update_continue(uid, mid):
@@ -91,84 +96,111 @@ def update_continue(uid, mid):
     if mid in USER_STATE[uid]:
         USER_STATE[uid].remove(mid)
     USER_STATE[uid].insert(0, mid)
+    USER_STATE[uid] = USER_STATE[uid][:5]
+
+def get_continue(uid, data):
+    ids = USER_STATE.get(uid, [])
+    return [m for m in data["movies"] if m["id"] in ids]
 
 # ================================
-# HERO
+# HERO BANNER
 # ================================
 
 def show_hero(chat_id, m):
-    safe_post("sendMessage", {
+    safe_post("sendPhoto", {
         "chat_id": chat_id,
-        "text": f"🔥 TOP FILM\n\n🎬 {m['title']}\n⭐ {m['rating']}",
+        "photo": get_poster(m["title"]),
+        "caption": f"""🔥 TRENDING NOW
+
+🎬 {m['title']}
+⭐ {m.get('rating','-')}
+
+{m.get('story','Jetzt verfügbar')}""",
         "reply_markup": {
-            "inline_keyboard": [[
-                {"text": "▶️ Start", "callback_data": f"movie_{m['title']}"}
+            "inline_keyboard":[[
+                {"text":"▶️ Start","callback_data":f"movie_{m['title']}"}
             ]]
         }
     })
 
 # ================================
-# SWIPE
+# ROW SYSTEM (COVER STYLE)
 # ================================
 
-def show_swipe(chat_id, movies, index=0):
-    print(f"[SWIPE] index={index}")
-
+def show_row(chat_id, title, movies):
     if not movies:
-        safe_post("sendMessage", {
-            "chat_id": chat_id,
-            "text": "❌ Keine Filme vorhanden"
-        })
         return
-
-    SESSION[chat_id] = movies
-
-    index = max(0, min(index, len(movies)-1))
-    m = movies[index]
-
-    nav = []
-    if index > 0:
-        nav.append({"text": "⬅️", "callback_data": f"swipe_{index-1}"})
-    if index < len(movies)-1:
-        nav.append({"text": "➡️", "callback_data": f"swipe_{index+1}"})
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": f"🎬 {m['title']}\n⭐ {m['rating']}",
-        "reply_markup": {
-            "inline_keyboard": [
-                nav,
-                [{"text": "▶️ Öffnen", "callback_data": f"movie_{m['title']}"}]
-            ]
+        "text": f"━━━ {title} ━━━"
+    })
+
+    buttons = []
+    row = []
+
+    for m in movies[:6]:
+        row.append({
+            "text": "🎬",
+            "callback_data": f"preview_{m['title']}"
+        })
+
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+
+    if row:
+        buttons.append(row)
+
+    safe_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": " ",
+        "reply_markup": {"inline_keyboard": buttons}
+    })
+
+# ================================
+# PREVIEW (HOVER FAKE)
+# ================================
+
+def show_preview(chat_id, m):
+    safe_post("sendPhoto", {
+        "chat_id": chat_id,
+        "photo": get_poster(m["title"]),
+        "caption": f"""🎬 {m['title']}
+⭐ {m.get('rating','-')}
+
+{m.get('story','')}""",
+        "reply_markup":{
+            "inline_keyboard":[[
+                {"text":"▶️ Öffnen","callback_data":f"movie_{m['title']}"}
+            ]]
         }
     })
 
 # ================================
-# CARD
+# FULL CARD
 # ================================
 
 def send_card(chat_id, m):
-    print(f"[CARD] {m['title']}")
-
-    caption = f"""🎬 {m['title']} ({m['year']})
-🔥 4K • {' • '.join(m['genre'])}
+    caption = f"""🎬 {m['title']} ({m.get('year','')})
+🔥 4K • {' • '.join(m.get('genre',[]))}
 ━━━━━━━━━━━━━━
-⭐ {m['rating']} • ⏱ {m['runtime']}
+⭐ {m.get('rating','-')} • ⏱ {m.get('runtime','-')}
 ━━━━━━━━━━━━━━
 📖 STORY
-{m['story']}
+{m.get('story','')}
 ━━━━━━━━━━━━━━
 ▶️ #{m['id']}
 ━━━━━━━━━━━━━━"""
 
+    safe_post("sendPhoto", {
+        "chat_id": chat_id,
+        "photo": get_poster(m["title"])
+    })
+
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": caption,
-        "reply_markup": {
-            "inline_keyboard": [[
-                {"text": "▶️ Play", "callback_data": f"play_{m['id']}"}
-            ]]
-        }
+        "text": caption
     })
 
 # ================================
@@ -176,19 +208,28 @@ def send_card(chat_id, m):
 # ================================
 
 def show_home(chat_id):
-    print("[HOME] geladen")
-
     data = load_data()
-    movies = get_top(data)
+    trending = get_trending(data)
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 CLEAN VERSION"
+        "text": "🎬 Library of Legends\n🔥 PRO UI"
     })
 
-    if movies:
-        show_hero(chat_id, movies[0])
-        show_swipe(chat_id, movies, 0)
+    if trending:
+        show_hero(chat_id, trending[0])
+
+    # Continue Watching
+    cont = get_continue(chat_id, data)
+    if cont:
+        show_row(chat_id, "▶️ Continue Watching", cont)
+
+    # Trending
+    show_row(chat_id, "🔥 Trending", trending)
+
+    # Kategorien
+    for name, movies in get_categories(data).items():
+        show_row(chat_id, f"🎬 {name}", movies)
 
 # ================================
 # WEBHOOK
@@ -199,21 +240,19 @@ app = Flask(__name__)
 @app.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
     update = request.get_json()
+    data = load_data()
 
     print("UPDATE:", update)
 
-    data = load_data()
-
-    # CALLBACKS
     if "callback_query" in update:
         cb = update["callback_query"]["data"]
         chat_id = update["callback_query"]["message"]["chat"]["id"]
 
-        print("CALLBACK:", cb)
-
-        if cb.startswith("swipe_"):
-            i = int(cb.split("_")[1])
-            show_swipe(chat_id, SESSION.get(chat_id, []), i)
+        if cb.startswith("preview_"):
+            title = cb.replace("preview_", "")
+            m = next((x for x in data["movies"] if x["title"] == title), None)
+            if m:
+                show_preview(chat_id, m)
 
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
@@ -221,21 +260,10 @@ def webhook():
 
             if m:
                 m["views"] += 1
-                save_data(data)
                 update_continue(chat_id, m["id"])
+                save_data(data)
                 send_card(chat_id, m)
 
-        elif cb.startswith("play_"):
-            mid = cb.split("_")[1]
-            m = next((x for x in data["movies"] if x["id"] == mid), None)
-
-            if m:
-                safe_post("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": f"▶️ Jetzt läuft: {m['title']}"
-                })
-
-    # MESSAGES
     if "message" in update:
         msg = update["message"]
         chat_id = msg["chat"]["id"]
@@ -250,10 +278,6 @@ def webhook():
 # ================================
 
 if __name__ == "__main__":
-    print("🔥 CLEAN BOT STARTING...")
-
-    ensure_data()
-
+    print("🔥 PRO UI BOT RUNNING")
     requests.get(f"{URL}/setWebhook?url={os.getenv('WEBHOOK_URL')}/webhook/{TOKEN}")
-
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
