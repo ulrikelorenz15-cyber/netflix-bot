@@ -2,30 +2,6 @@ body {
   margin: 0;
   background: #141414;
   color: white;
-  font-family: Arial;
-}
-
-/* NAV */
-.nav {
-  position: fixed;
-  width: 100%;
-  padding: 15px 30px;
-  display: flex;
-  justify-content: space-between;
-  background: linear-gradient(to bottom, black, transparent);
-  z-index: 10;
-}
-
-.logo {
-  color: red;
-  font-weight: bold;
-}
-
-.nav input {
-  background: rgba(255,255,255,0.1);
-  border: none;
-  padding: 8px;
-  color: white;
 }
 
 /* HERO */
@@ -41,15 +17,6 @@ body {
   background: linear-gradient(to top, black, transparent);
 }
 
-.hero h1 {
-  font-size: 50px;
-}
-
-/* CATEGORY */
-.category {
-  margin: 20px;
-}
-
 /* ROW */
 .row {
   display: flex;
@@ -59,28 +26,50 @@ body {
 
 /* CARD */
 .card {
-  min-width: 150px;
-  height: 220px;
-  background-size: cover;
+  width: 180px;
+  height: 260px;
   margin-right: 10px;
   border-radius: 10px;
+  overflow: hidden;
   position: relative;
   cursor: pointer;
   transition: 0.3s;
 }
 
 .card:hover {
-  transform: scale(1.2);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  transform: scale(1.3);
+  z-index: 10;
 }
 
-/* OVERLAY */
-.card-overlay {
+/* VIDEO PREVIEW */
+.preview {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: 0.3s;
+}
+
+.card:hover .preview {
+  opacity: 1;
+}
+
+/* COVER */
+.cover {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+}
+
+/* TITLE */
+.card-title {
   position: absolute;
   bottom: 0;
   padding: 10px;
-  width: 100%;
   background: linear-gradient(to top, black, transparent);
+  width: 100%;
 }
 
 /* PROGRESS */
@@ -98,13 +87,6 @@ body {
   width: 100%;
   height: 100%;
   background: black;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-content {
-  width: 80%;
 }
 
 video {
