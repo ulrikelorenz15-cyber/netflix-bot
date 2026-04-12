@@ -5,6 +5,7 @@
 import os
 import json
 import requests
+import re
 from flask import Flask, request
 from openai import OpenAI
 from difflib import get_close_matches
@@ -40,6 +41,88 @@ def clean_title(raw):
     raw = raw.replace(".", " ")
     blacklist = ["1080p","720p","bluray","x264","x265","dvdrip","webdl"]
     return " ".join([w for w in raw.split() if w.lower() not in blacklist])
+
+# ================================
+# 🧠 AUTO DB BUILDER (NEU)
+# ================================
+
+def extract_movie_data(text):
+    if not text:
+        return None
+
+    text = text.replace("\n", " ")
+
+    # 🎬 TITLE
+    title = ""
+    if "🎬" in text:
+        title = text.split("🎬")[1]
+    else:
+        title = text
+
+    # YEAR
+    year = ""
+    y = re.search(r"\((\d{4})\)", title)
+    if y:
+        year = y.group(1)
+        title = title.split("(")[0]
+
+    title = title.strip()
+
+    # RUNTIME
+    runtime = "-"
+    rt = re.search(r"⏱\s*([0-9]+ ?min)", text.lower())
+    if rt:
+        runtime = rt.group(1)
+
+    # DIRECTOR
+    director = "-"
+    dr = re.search(r"🎥\s*([^#]+)", text)
+    if dr:
+        director = dr.group(1).strip()
+
+    # GENRE
+    genres = re.findall(r"#(\w+)", text)
+    if not genres:
+        genres = ["Unknown"]
+
+    return {
+        "title": title,
+        "year": year,
+        "genre": genres[:2],
+        "runtime": runtime,
+        "director": director
+    }
+
+def save_movie_from_post(msg):
+    data = load_data()
+    video = msg.get("video") or msg.get("document")
+    caption = msg.get("caption") or ""
+
+    info = extract_movie_data(caption)
+
+    if not info or not info["title"]:
+        return None
+
+    # DUPLICATE CHECK
+    for m in data["movies"]:
+        if m["title"].lower() == info["title"].lower():
+            return m
+
+    entry = {
+        "id": get_next_id(data),
+        "title": info["title"],
+        "year": info["year"],
+        "genre": info["genre"],
+        "runtime": info["runtime"],
+        "director": info["director"],
+        "file_id": video["file_id"],
+        "views": 0
+    }
+
+    data["movies"].append(entry)
+    save_data(data)
+
+    return entry
 
 # ================================
 # 🧠 USER SYSTEM
@@ -109,18 +192,16 @@ def get_next_id(data):
     return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# 🧠 MATCH SYSTEM (OFFLINE)
+# MATCH SYSTEM
 # ================================
 
 def match_movie(raw, data):
     raw = raw.lower()
 
-    # DIRECT
     for m in data["movies"]:
         if raw in m["title"].lower():
             return m
 
-    # FUZZY
     titles = [m["title"] for m in data["movies"]]
     match = get_close_matches(raw, titles, n=1, cutoff=0.5)
 
@@ -130,19 +211,18 @@ def match_movie(raw, data):
     return None
 
 # ================================
-# 📊 TRENDING
+# TRENDING
 # ================================
 
 def get_top_movies(data):
     return sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True)[:10]
 
 # ================================
-# 🧠 RECOMMENDATIONS
+# RECOMMENDATION
 # ================================
 
 def get_recommendations(uid, data):
     user = get_user(uid)
-
     genres = []
 
     for mid in user["history"]:
@@ -151,23 +231,16 @@ def get_recommendations(uid, data):
             genres += m.get("genre", [])
 
     scored = []
-
     for m in data["movies"]:
-        score = 0
-
-        for g in m.get("genre", []):
-            if g in genres:
-                score += 2
-
+        score = sum(2 for g in m.get("genre", []) if g in genres)
         score += m.get("views", 0) * 0.2
-
         scored.append((score, m))
 
     scored.sort(reverse=True)
     return [m for _, m in scored[:10]]
 
 # ================================
-# 🎞 ROW UI
+# UI
 # ================================
 
 def show_row(chat_id, title, movies):
@@ -190,7 +263,7 @@ def show_row(chat_id, title, movies):
     })
 
 # ================================
-# 🎬 CARD
+# CARD
 # ================================
 
 def send_card(chat_id, movie):
@@ -239,30 +312,26 @@ def show_home(chat_id):
     show_row(chat_id, "🆕 Neu", list(reversed(data["movies"]))[:10])
 
 # ================================
-# VIDEO
+# VIDEO (UPDATED)
 # ================================
 
 def handle_video(msg):
-    data = load_data()
-    video = msg.get("video") or msg.get("document")
+    entry = save_movie_from_post(msg)
 
-    raw = clean_title(msg.get("caption") or "")
-    movie = match_movie(raw, data)
-
-    if not movie:
+    if not entry:
         safe_post("sendMessage", {
             "chat_id": msg["chat"]["id"],
-            "text": f"❌ Nicht erkannt: {raw}"
+            "text": "❌ Konnte Film nicht erkennen"
         })
         return
 
     safe_post("sendMessage", {
         "chat_id": msg["chat"]["id"],
-        "text": f"🧠 Erkannt: {movie['title']}"
+        "text": f"✅ Gespeichert: {entry['title']}"
     })
 
-    send_card(msg["chat"]["id"], movie)
-    send_card(CHANNEL, movie)
+    send_card(msg["chat"]["id"], entry)
+    send_card(CHANNEL, entry)
 
 # ================================
 # WEBHOOK
@@ -286,20 +355,8 @@ def webhook():
             mid = cb.split("_")[1]
             update_continue(chat_id, mid)
 
-            m = next((x for x in data["movies"] if x["id"] == mid), None)
-            if m:
-                m["views"] += 1
-                save_data(data)
-                send_card(chat_id, m)
-
         elif cb.startswith("fav_"):
-            mid = cb.split("_")[1]
-            add_favorite(chat_id, mid)
-
-            safe_post("sendMessage", {
-                "chat_id": chat_id,
-                "text": "⭐ Zu Favoriten hinzugefügt"
-            })
+            add_favorite(chat_id, cb.split("_")[1])
 
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
