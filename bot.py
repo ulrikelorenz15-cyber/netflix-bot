@@ -16,7 +16,7 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = "DEIN_BOT_TOKEN"
+TOKEN = "8798666857:AAHe5OvSr7Wzx1iJLVvjH5DiPRNxYGPZ6Yw"
 TMDB_KEY = ""  # optional
 
 DB = "movies.db"
