@@ -1,11 +1,10 @@
 # ================================
-# 🎬 FINAL TELEGRAM NETFLIX BOT
+# 🎬 FINAL TELEGRAM NETFLIX BOT (STABLE)
 # ================================
 
 import sqlite3
 import re
 import time
-import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -17,7 +16,6 @@ from telegram.ext import (
 )
 
 TOKEN = "8798666857:AAHe5OvSr7Wzx1iJLVvjH5DiPRNxYGPZ6Yw"
-TMDB_KEY = "db9b706c6b6dae0074108285d99ef9bb"  # optional
 
 DB = "movies.db"
 
@@ -177,7 +175,10 @@ async def show_category(update, context, cat):
     con = db()
     cur = con.cursor()
 
-    movies = cur.execute("SELECT * FROM movies WHERE category=?", (cat,)).fetchall()
+    movies = cur.execute(
+        "SELECT * FROM movies WHERE category=?",
+        (cat,)
+    ).fetchall()
     con.close()
 
     for m in movies[:10]:
@@ -243,14 +244,21 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_category(update, context, data.split("_")[1])
 
 # ================================
-# HANDLER
+# VIDEO HANDLER (FIXED)
+# ================================
+
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    save_movie(update.message)
+
+# ================================
+# MAIN
 # ================================
 
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(buttons))
-app.add_handler(MessageHandler(filters.VIDEO, lambda u,c: save_movie(u.message)))
+app.add_handler(MessageHandler(filters.VIDEO, handle_video))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_handler))
 
 print("✅ BOT LÄUFT...")
