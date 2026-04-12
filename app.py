@@ -1,13 +1,12 @@
 # ================================
-# 🎬 NETFLIX ULTRA UI SYSTEM
+# 🎬 FINAL BOSS NETFLIX SYSTEM
 # ================================
 
 import os
 import json
 import requests
 import re
-import time
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, redirect
 
 app = Flask(__name__)
 
@@ -23,16 +22,16 @@ TMDB_KEY = os.getenv("TMDB_KEY")
 def load_data():
     if os.path.exists(DATA_FILE):
         return json.load(open(DATA_FILE))
-    return {"movies": [], "series": []}
+    return {"movies": []}
 
 def save_data(data):
     json.dump(data, open(DATA_FILE, "w"))
 
-def get_id(arr):
-    return str(len(arr)+1).zfill(4)
+def get_id(data):
+    return str(len(data["movies"]) + 1).zfill(4)
 
 # ================================
-# AUTO COVER
+# AUTO COVER (TMDB)
 # ================================
 
 def get_poster(title):
@@ -58,20 +57,25 @@ def extract(text):
     if not t:
         return None
 
+    story = "-"
+    if "STORY" in text:
+        s = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S)
+        if s:
+            story = s.group(1)
+
     return {
         "title": t.group(1),
         "year": t.group(2),
-        "story": re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S).group(1) if "STORY" in text else "-"
+        "story": story
     }
 
 # ================================
-# 🎬 HOME (ULTRA UI)
+# 🎬 HOME UI (ULTRA)
 # ================================
 
 @app.route("/")
 def home():
     data = load_data()
-
     movies = data["movies"]
     hero = movies[0] if movies else None
 
@@ -81,14 +85,8 @@ def home():
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
-    body {
-        background:#141414;
-        color:white;
-        font-family:sans-serif;
-        margin:0;
-    }
+    body {background:#141414;color:white;margin:0;font-family:sans-serif}
 
-    /* NAV */
     .nav {
         position:fixed;
         top:0;
@@ -98,14 +96,8 @@ def home():
         z-index:10;
     }
 
-    .nav a {
-        margin-right:15px;
-        color:white;
-        text-decoration:none;
-        font-weight:bold;
-    }
+    .nav a {margin-right:15px;color:white;text-decoration:none}
 
-    /* HERO */
     .hero {
         height:70vh;
         background-size:cover;
@@ -116,28 +108,10 @@ def home():
         font-weight:bold;
     }
 
-    /* ROW */
-    .row {
-        display:flex;
-        overflow-x:auto;
-        padding:10px;
-    }
+    .row {display:flex;overflow-x:auto;padding:10px}
 
-    /* CARD */
-    .card {
-        position:relative;
-        margin-right:10px;
-        transition:0.3s;
-    }
-
-    .card img {
-        width:140px;
-        border-radius:8px;
-    }
-
-    .card:hover {
-        transform:scale(1.2);
-    }
+    .card {margin-right:10px;position:relative}
+    .card img {width:140px;border-radius:8px}
 
     .overlay {
         position:absolute;
@@ -148,15 +122,13 @@ def home():
         padding:5px;
     }
 
-    /* GRID */
     .grid {
         display:grid;
-        grid-template-columns:repeat(auto-fill, minmax(120px,1fr));
+        grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
         gap:10px;
         padding:10px;
     }
 
-    /* MODAL */
     .modal {
         display:none;
         position:fixed;
@@ -169,51 +141,54 @@ def home():
         padding:20px;
     }
 
+    button {
+        padding:10px;
+        margin:5px;
+        background:red;
+        color:white;
+        border:none;
+    }
+
     </style>
     </head>
 
     <body>
 
-    <!-- NAV -->
     <div class="nav">
-        <a href="#">🏠 Home</a>
-        <a href="#movies">🎬 Filme</a>
+        <a href="/">🏠 Home</a>
+        <a href="/admin">⚙️ Admin</a>
     </div>
 
-    <!-- HERO -->
     {% if hero %}
     <div class="hero" style="background-image:url('{{hero.poster}}')">
         {{hero.title}}
     </div>
     {% endif %}
 
-    <!-- TRENDING -->
     <h2 style="padding:10px;">🔥 Trending</h2>
     <div class="row">
     {% for m in movies[:10] %}
-        <div class="card" onclick="openModal('{{m.title}}','{{m.story}}','{{m.poster}}','{{m.id}}')">
+        <div class="card" onclick="openModal('{{m.id}}','{{m.title}}','{{m.story}}','{{m.poster}}')">
             <img src="{{m.poster}}">
             <div class="overlay">{{m.title}}</div>
         </div>
     {% endfor %}
     </div>
 
-    <!-- GRID -->
-    <h2 id="movies" style="padding:10px;">🎬 Alle Filme</h2>
+    <h2 style="padding:10px;">🎬 Alle Filme</h2>
     <div class="grid">
     {% for m in movies %}
-        <div class="card" onclick="openModal('{{m.title}}','{{m.story}}','{{m.poster}}','{{m.id}}')">
+        <div class="card" onclick="openModal('{{m.id}}','{{m.title}}','{{m.story}}','{{m.poster}}')">
             <img src="{{m.poster}}">
             <div class="overlay">{{m.title}}</div>
         </div>
     {% endfor %}
     </div>
 
-    <!-- MODAL -->
     <div id="modal" class="modal">
-        <h1 id="m_title"></h1>
-        <img id="m_img" style="width:200px;">
-        <p id="m_story"></p>
+        <h1 id="title"></h1>
+        <img id="img" style="width:200px;">
+        <p id="story"></p>
 
         <button onclick="play()">▶️ Play</button>
         <button onclick="closeModal()">❌ Close</button>
@@ -222,12 +197,12 @@ def home():
     <script>
     let currentId = null;
 
-    function openModal(title, story, poster, id){
-        document.getElementById("modal").style.display="block";
-        document.getElementById("m_title").innerText=title;
-        document.getElementById("m_story").innerText=story;
-        document.getElementById("m_img").src=poster;
+    function openModal(id,title,story,poster){
         currentId = id;
+        document.getElementById("modal").style.display="block";
+        document.getElementById("title").innerText=title;
+        document.getElementById("story").innerText=story;
+        document.getElementById("img").src=poster;
     }
 
     function closeModal(){
@@ -236,7 +211,7 @@ def home():
 
     function play(){
         let uid = prompt("Deine Telegram ID:");
-        window.location = "/play/"+currentId+"?uid="+uid;
+        window.location="/play/"+currentId+"?uid="+uid;
     }
     </script>
 
@@ -245,7 +220,7 @@ def home():
     """, movies=movies, hero=hero)
 
 # ================================
-# PLAY
+# 🎮 PLAY
 # ================================
 
 @app.route("/play/<mid>")
@@ -262,7 +237,66 @@ def play(mid):
             "caption": f"▶️ {m['title']}"
         })
 
-    return "▶️ Wird abgespielt..."
+    return "▶️ Wird gesendet..."
+
+# ================================
+# ⚙️ ADMIN PANEL
+# ================================
+
+@app.route("/admin")
+def admin():
+    data = load_data()
+
+    return render_template_string("""
+    <h1>Admin Panel</h1>
+
+    {% for m in data.movies %}
+        <div>
+            <b>{{m.title}}</b><br>
+            <img src="{{m.poster}}" width="100"><br>
+
+            <a href="/edit/{{m.id}}">✏️ Edit</a>
+            <a href="/delete/{{m.id}}">🗑 Delete</a>
+        </div>
+        <hr>
+    {% endfor %}
+    """, data=data)
+
+# ================================
+# EDIT (COVER + TITLE)
+# ================================
+
+@app.route("/edit/<mid>", methods=["GET","POST"])
+def edit(mid):
+    data = load_data()
+    m = next(x for x in data["movies"] if x["id"] == mid)
+
+    if request.method == "POST":
+        m["title"] = request.form["title"]
+        m["poster"] = request.form["poster"]
+        m["story"] = request.form["story"]
+        save_data(data)
+        return redirect("/admin")
+
+    return render_template_string("""
+    <form method="post">
+        Title: <input name="title" value="{{m.title}}"><br>
+        Poster URL: <input name="poster" value="{{m.poster}}"><br>
+        Story: <textarea name="story">{{m.story}}</textarea><br>
+        <button>Save</button>
+    </form>
+    """, m=m)
+
+# ================================
+# DELETE
+# ================================
+
+@app.route("/delete/<mid>")
+def delete(mid):
+    data = load_data()
+    data["movies"] = [m for m in data["movies"] if m["id"] != mid]
+    save_data(data)
+    return redirect("/admin")
 
 # ================================
 # WEBHOOK
@@ -283,7 +317,7 @@ def webhook():
                 return "ok"
 
             entry = {
-                "id": get_id(data["movies"]),
+                "id": get_id(data),
                 **info,
                 "file_id": msg["video"]["file_id"],
                 "poster": get_poster(info["title"])
