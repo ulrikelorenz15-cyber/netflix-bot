@@ -1,5 +1,5 @@
 # ================================
-# 🎬 ULTIMATE PLATFORM MODE
+# 🎬 ENTERPRISE MODE PLATFORM
 # ================================
 
 import os
@@ -7,11 +7,13 @@ import sqlite3
 import requests
 import re
 import time
-from flask import Flask, request, jsonify, Response, render_template_string
+from flask import Flask, request, jsonify, Response, render_template_string, session, redirect
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
+
+app.secret_key = os.getenv("SECRET_KEY","secret")
 
 TOKEN = os.getenv("BOT_TOKEN")
 TMDB_KEY = os.getenv("TMDB_KEY")
@@ -30,6 +32,7 @@ def init_db():
     con = db()
     cur = con.cursor()
 
+    # movies
     cur.execute("""
     CREATE TABLE IF NOT EXISTS movies(
         id TEXT,
@@ -37,8 +40,33 @@ def init_db():
         story TEXT,
         file_id TEXT,
         cover TEXT,
-        category TEXT,
+        category TEXT
+    )
+    """)
+
+    # users
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        password TEXT
+    )
+    """)
+
+    # progress
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS progress(
+        user TEXT,
+        movie_id TEXT,
         progress INTEGER
+    )
+    """)
+
+    # watchlist
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS watchlist(
+        user TEXT,
+        movie_id TEXT
     )
     """)
 
@@ -76,16 +104,16 @@ def extract_data(caption):
     if not caption:
         return "Film", "-", "General"
 
-    title_match = re.search(r"🎬\s*(.*?)\s*\(", caption)
-    title = title_match.group(1) if title_match else caption.split("\n")[0]
+    title = re.search(r"🎬\s*(.*?)\s*\(", caption)
+    title = title.group(1) if title else caption.split("\n")[0]
 
-    story_match = re.search(r"STORY\s*(.*?)\s*(▶️|#|$)", caption, re.S)
-    story = story_match.group(1).strip() if story_match else "-"
+    story = re.search(r"STORY\s*(.*?)\s*(▶️|#|$)", caption, re.S)
+    story = story.group(1).strip() if story else "-"
 
     tags = re.findall(r"#([A-Za-z]+)", caption)
     category = tags[0] if tags else "General"
 
-    return title.strip(), story.strip(), category
+    return title, story, category
 
 # ================================
 # SAVE TELEGRAM
@@ -102,15 +130,14 @@ def save(msg):
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO movies VALUES(?,?,?,?,?,?,?)
+    INSERT INTO movies VALUES(?,?,?,?,?,?)
     """, (
         str(int(time.time())),
         title,
         story,
         msg["video"]["file_id"],
         cover,
-        category,
-        0
+        category
     ))
 
     con.commit()
@@ -147,6 +174,47 @@ def stream(id):
     return Response(generate(), content_type="video/mp4")
 
 # ================================
+# AUTH
+# ================================
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+
+    con = db()
+    cur = con.cursor()
+
+    user = cur.execute(
+        "SELECT * FROM users WHERE username=? AND password=?",
+        (data["username"], data["password"])
+    ).fetchone()
+
+    con.close()
+
+    if user:
+        session["user"] = data["username"]
+        return {"status":"ok"}
+
+    return {"status":"fail"}
+
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+
+    con = db()
+    cur = con.cursor()
+
+    cur.execute(
+        "INSERT INTO users(username,password) VALUES(?,?)",
+        (data["username"], data["password"])
+    )
+
+    con.commit()
+    con.close()
+
+    return {"status":"ok"}
+
+# ================================
 # API
 # ================================
 
@@ -164,34 +232,12 @@ def movies():
             "title": r[1],
             "story": r[2],
             "cover": r[4],
-            "category": r[5],
-            "progress": r[6]
+            "category": r[5]
         } for r in rows
     ])
 
 # ================================
-# PROGRESS
-# ================================
-
-@app.route("/progress", methods=["POST"])
-def progress():
-    data = request.json
-
-    con = db()
-    cur = con.cursor()
-
-    cur.execute("UPDATE movies SET progress=? WHERE id=?", (
-        int(data["progress"]),
-        data["id"]
-    ))
-
-    con.commit()
-    con.close()
-
-    return "ok"
-
-# ================================
-# 🎬 UI (ULTIMATE PLATFORM)
+# UI
 # ================================
 
 @app.route("/")
@@ -202,162 +248,33 @@ def home():
 <meta name="viewport" content="width=device-width">
 
 <style>
-body {margin:0;background:#141414;color:white;font-family:sans-serif}
-
-/* NAV */
-.nav {
-  display:flex;
-  justify-content:space-between;
-  padding:15px;
-  background:black;
-}
-
-.nav input {
-  background:#222;
-  border:none;
-  color:white;
-}
-
-/* HERO */
-.hero {
-  height:60vh;
-  display:flex;
-  align-items:end;
-  padding:30px;
-  background-size:cover;
-}
-
-/* ROW */
-.row {
-  display:flex;
-  overflow-x:auto;
-  padding:20px;
-}
-
-/* CARD */
-.card {
-  width:180px;
-  height:260px;
-  margin-right:10px;
-  position:relative;
-  border-radius:10px;
-  overflow:hidden;
-  cursor:pointer;
-}
-
-.preview {
-  position:absolute;
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  opacity:0;
-}
-
-.card:hover .preview {
-  opacity:1;
-}
-
-.cover {
-  position:absolute;
-  width:100%;
-  height:100%;
-  background-size:cover;
-}
-
-.title {
-  position:absolute;
-  bottom:0;
-  padding:10px;
-  background:linear-gradient(to top, black, transparent);
-}
-
-/* MODAL */
-.modal {
-  position:fixed;
-  top:0;
-  width:100%;
-  height:100%;
-  background:black;
-  display:none;
-}
+body {background:#141414;color:white;font-family:sans-serif;margin:0}
+.row{display:flex;overflow-x:auto;padding:20px}
+.card{width:160px;height:240px;margin-right:10px;background-size:cover}
 </style>
 
 <body>
 
-<div class="nav">
-  <div>🎬 NETFLIX</div>
-  <input placeholder="Suche..." oninput="search(this.value)">
-</div>
-
-<div id="hero" class="hero"></div>
+<h1 style="padding:10px">🎬 ENTERPRISE NETFLIX</h1>
 <div id="content"></div>
 
-<div id="modal" class="modal">
-  <video id="video" controls autoplay></video>
-  <button onclick="closeModal()">✖</button>
-</div>
-
 <script>
-let DATA=[];
-let WATCHLIST = JSON.parse(localStorage.getItem("watchlist")||"[]");
-
 fetch("/movies")
 .then(r=>r.json())
 .then(data=>{
-  DATA=data;
-  render(data);
-});
+  let html="";
 
-function render(data){
-  let content=document.getElementById("content");
-  content.innerHTML="";
-
-  if(data.length){
-    document.getElementById("hero").style.backgroundImage =
-      "url("+data[0].cover+")";
-  }
-
-  let categories=[...new Set(data.map(m=>m.category))];
-
-  categories.forEach(cat=>{
-    let title=document.createElement("h2");
-    title.innerText=cat;
-    content.appendChild(title);
-
-    let row=document.createElement("div");
-    row.className="row";
-
-    data.filter(m=>m.category===cat).forEach(m=>{
-      let card=document.createElement("div");
-      card.className="card";
-
-      card.innerHTML=`
-        <video class="preview" src="/stream/${m.id}" muted loop></video>
-        <div class="cover" style="background-image:url(${m.cover})"></div>
-        <div class="title">${m.title}</div>
-      `;
-
-      card.onclick=()=>{
-        let v=document.getElementById("video");
-        v.src="/stream/"+m.id;
-        document.getElementById("modal").style.display="block";
-      };
-
-      row.appendChild(card);
-    });
-
-    content.appendChild(row);
+  data.forEach(m=>{
+    html += `
+      <div style="margin:20px">
+        <h3>${m.title}</h3>
+        <video width="300" controls src="/stream/${m.id}"></video>
+      </div>
+    `;
   });
-}
 
-function search(q){
-  let f=DATA.filter(m=>m.title.toLowerCase().includes(q.toLowerCase()));
-  render(f);
-}
-
-function closeModal(){
-  document.getElementById("modal").style.display="none";
-}
+  document.getElementById("content").innerHTML = html;
+});
 </script>
 
 </body>
