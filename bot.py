@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (NEXT LEVEL UI++)
+# 🎬 NETFLIX BOT FINAL (DESIGN PACK + APP MODE)
 # ================================
 
 import os
@@ -29,7 +29,7 @@ def safe_post(method, payload):
         pass
 
 # ================================
-# 🎬 POSTER (REAL)
+# 🎬 POSTER (ECHT)
 # ================================
 
 def get_poster(title):
@@ -41,67 +41,47 @@ def get_poster(title):
         ).json()
 
         if r.get("results"):
-            poster = r["results"][0]["poster_path"]
-            if poster:
-                return f"https://image.tmdb.org/t/p/w500{poster}"
+            p = r["results"][0].get("poster_path")
+            if p:
+                return f"https://image.tmdb.org/t/p/w500{p}"
     except:
         pass
 
     return f"https://dummyimage.com/600x900/000/fff&text={title}"
 
 # ================================
-# 🧠 SERIES DETECT
-# ================================
-
-def detect_series(title):
-    t = title.lower()
-
-    if "bourne" in t: return "Bourne"
-    if "jurassic" in t: return "Jurassic"
-    if "star trek" in t: return "Star Trek"
-    if "godzilla" in t or "kong" in t: return "MonsterVerse"
-
-    return None
-
-# ================================
-# 🧠 ULTRA PARSER
+# 🧠 PARSER (PERFECT MATCH)
 # ================================
 
 def extract_movie_data(text):
     if not text:
         return None
 
-    text = text.replace("\n", " ")
+    raw = text
 
-    m = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", text)
-    if not m:
+    title = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", raw)
+    if not title:
         return None
 
-    title = m.group(1).strip()
-    year = m.group(2)
+    name = title.group(1).strip()
+    year = title.group(2)
 
-    rating = re.search(r"⭐\s*([0-9.]+)", text)
-    runtime = re.search(r"⏱\s*([0-9]+\s*Min)", text)
-    director = re.search(r"🎥\s*(.*?)\s*━━━━━━━━", text)
-    story = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text)
+    rating = re.search(r"⭐\s*([0-9.]+)", raw)
+    runtime = re.search(r"⏱\s*([0-9]+\s*Min)", raw)
+    director = re.search(r"🎥\s*(.*?)\s*━━━━━━━━", raw)
+    story = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", raw, re.S)
 
-    genres = re.findall(r"#(\w+)", text)
-
-    if not genres:
-        g = re.search(r"🔥.*?•(.*?)━", text)
-        if g:
-            genres = [x.strip() for x in g.group(1).split("•")]
+    genres = re.findall(r"#(\w+)", raw)
 
     return {
-        "title": title,
+        "title": name,
         "year": year,
-        "genre": genres or ["Unknown"],
+        "genre": genres[:2] if genres else ["Unknown"],
         "runtime": runtime.group(1) if runtime else "-",
         "director": director.group(1) if director else "-",
         "rating": rating.group(1) if rating else "-",
-        "story": story.group(1) if story else "-",
-        "tags": genres or ["Unknown"],
-        "series": detect_series(title)
+        "story": story.group(1).strip() if story else "-",
+        "tags": genres if genres else ["Unknown"]
     }
 
 # ================================
@@ -148,17 +128,14 @@ def save_movie(msg):
     return entry
 
 # ================================
-# 📊 SCORE
+# 📊 SORTING
 # ================================
 
-def get_score(m):
-    return m["views"] * 2 + len(m["genre"]) * 3
-
-def get_top_movies(data):
-    return sorted(data["movies"], key=get_score, reverse=True)[:10]
+def get_top(data):
+    return sorted(data["movies"], key=lambda x: x["views"], reverse=True)
 
 # ================================
-# 📂 STRUCTURE
+# 📂 KATEGORIEN
 # ================================
 
 def get_categories(data):
@@ -168,15 +145,8 @@ def get_categories(data):
             cats.setdefault(g, []).append(m)
     return cats
 
-def get_series(data):
-    s = {}
-    for m in data["movies"]:
-        if m.get("series"):
-            s.setdefault(m["series"], []).append(m)
-    return s
-
 # ================================
-# ▶️ CONTINUE WATCHING
+# ▶️ CONTINUE
 # ================================
 
 def update_continue(uid, mid):
@@ -193,37 +163,73 @@ def get_continue(uid, data):
     return [m for m in data["movies"] if m["id"] in ids]
 
 # ================================
-# 🎮 SWIPE UI
+# 🎮 GRID
 # ================================
 
-def show_swipe(chat_id, movies, index=0):
+def show_grid(chat_id, movies, page=0, title="🎬 Auswahl"):
     SESSION[chat_id] = movies
 
-    if not movies:
-        return
+    per_page = 9
+    start = page * per_page
+    subset = movies[start:start+per_page]
 
-    m = movies[index]
+    rows = []
+    row = []
+
+    for m in subset:
+        row.append({
+            "text": "🎬",
+            "callback_data": f"preview_{m['title']}"
+        })
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+
+    if row:
+        rows.append(row)
 
     nav = []
-    if index > 0:
-        nav.append({"text": "⬅️", "callback_data": f"swipe_{index-1}"})
-    if index < len(movies)-1:
-        nav.append({"text": "➡️", "callback_data": f"swipe_{index+1}"})
+    if page > 0:
+        nav.append({"text": "⬅️", "callback_data": f"page_{page-1}"})
+    if start + per_page < len(movies):
+        nav.append({"text": "➡️", "callback_data": f"page_{page+1}"})
+
+    if nav:
+        rows.append(nav)
+
+    rows.append([{"text": "🏠 Home", "callback_data": "home"}])
+
+    safe_post("sendMessage", {
+        "chat_id": chat_id,
+        "text": title,
+        "reply_markup": {"inline_keyboard": rows}
+    })
+
+# ================================
+# 🎥 PREVIEW
+# ================================
+
+def show_preview(chat_id, title):
+    data = load_data()
+    m = next((x for x in data["movies"] if x["title"] == title), None)
+
+    if not m:
+        return
 
     safe_post("sendPhoto", {
         "chat_id": chat_id,
         "photo": get_poster(m["title"]),
-        "caption": f"🎬 {m['title']}",
+        "caption": f"🎬 {m['title']}\n⭐ {m['rating']}",
         "reply_markup": {
             "inline_keyboard": [
-                nav,
-                [{"text": "▶️ Öffnen", "callback_data": f"movie_{m['title']}"}]
+                [{"text": "▶️ Öffnen", "callback_data": f"movie_{m['title']}"}],
+                [{"text": "🔙 Zurück", "callback_data": "home"}]
             ]
         }
     })
 
 # ================================
-# 🎬 CARD
+# 🎬 FILMKARTE (PERFEKT)
 # ================================
 
 def send_card(chat_id, m):
@@ -249,55 +255,25 @@ def send_card(chat_id, m):
     safe_post("sendVideo", {
         "chat_id": chat_id,
         "video": m["file_id"],
-        "caption": caption,
-        "reply_markup": {
-            "inline_keyboard": [
-                [{"text": "▶️ Start", "callback_data": f"play_{m['id']}"}],
-                [{"text": "🏠 Home", "callback_data": "home"}]
-            ]
-        }
+        "caption": caption
     })
-
-# ================================
-# ▶️ AUTOPLAY (SERIEN)
-# ================================
-
-def play_next(chat_id, current_id, data):
-    movies = data["movies"]
-
-    for i, m in enumerate(movies):
-        if m["id"] == current_id and i + 1 < len(movies):
-            next_movie = movies[i + 1]
-            send_card(chat_id, next_movie)
-            return
 
 # ================================
 # 🏠 HOME
 # ================================
 
 def show_home(chat_id):
-    data = load_data()
+    keyboard = [
+        [{"text": "🔥 Trending", "callback_data": "trending"}],
+        [{"text": "🎬 Kategorien", "callback_data": "categories"}],
+        [{"text": "▶️ Continue", "callback_data": "continue"}]
+    ]
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 NEXT LEVEL NETFLIX"
+        "text": "🎬 Library of Legends\n🔥 NETFLIX UI",
+        "reply_markup": {"inline_keyboard": keyboard}
     })
-
-    # HERO
-    show_swipe(chat_id, get_top_movies(data), 0)
-
-    # CONTINUE
-    cont = get_continue(chat_id, data)
-    if cont:
-        show_swipe(chat_id, cont, 0)
-
-    # SERIES
-    for name, movies in get_series(data).items():
-        show_swipe(chat_id, movies, 0)
-
-    # GENRES
-    for name, movies in get_categories(data).items():
-        show_swipe(chat_id, movies[:10], 0)
 
 # ================================
 # VIDEO
@@ -309,7 +285,7 @@ def handle_video(msg):
     if not entry:
         safe_post("sendMessage", {
             "chat_id": msg["chat"]["id"],
-            "text": "❌ Format falsch!"
+            "text": "❌ Format falsch"
         })
         return
 
@@ -339,9 +315,31 @@ def webhook():
         if cb == "home":
             show_home(chat_id)
 
-        elif cb.startswith("swipe_"):
-            i = int(cb.split("_")[1])
-            show_swipe(chat_id, SESSION.get(chat_id, []), i)
+        elif cb == "trending":
+            show_grid(chat_id, get_top(data), 0, "🔥 Trending")
+
+        elif cb == "categories":
+            cats = get_categories(data)
+            buttons = [[{"text": c, "callback_data": f"cat_{c}"}] for c in cats]
+
+            safe_post("sendMessage", {
+                "chat_id": chat_id,
+                "text": "🎬 Kategorien",
+                "reply_markup": {"inline_keyboard": buttons}
+            })
+
+        elif cb.startswith("cat_"):
+            name = cb.replace("cat_", "")
+            show_grid(chat_id, get_categories(data)[name], 0, f"🎬 {name}")
+
+        elif cb == "continue":
+            show_grid(chat_id, get_continue(chat_id, data), 0, "▶️ Continue")
+
+        elif cb.startswith("page_"):
+            show_grid(chat_id, SESSION.get(chat_id, []), int(cb.split("_")[1]))
+
+        elif cb.startswith("preview_"):
+            show_preview(chat_id, cb.replace("preview_", ""))
 
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
@@ -352,10 +350,6 @@ def webhook():
                 m["views"] += 1
                 save_data(data)
                 send_card(chat_id, m)
-
-        elif cb.startswith("play_"):
-            mid = cb.split("_")[1]
-            play_next(chat_id, mid, data)
 
     if "message" in update:
         msg = update["message"]
