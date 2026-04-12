@@ -5,7 +5,6 @@ body {
   font-family: Arial;
 }
 
-/* NAV */
 .nav {
   display: flex;
   justify-content: space-between;
@@ -20,7 +19,6 @@ body {
   padding: 5px;
 }
 
-/* HERO */
 .hero {
   height: 60vh;
   display: flex;
@@ -30,14 +28,12 @@ body {
   background: linear-gradient(to top, black, transparent), #222;
 }
 
-/* ROW */
 .row {
   display: flex;
   overflow-x: auto;
   padding: 20px;
 }
 
-/* CARD */
 .card {
   min-width: 160px;
   height: 240px;
@@ -50,20 +46,16 @@ body {
 
 .card:hover {
   transform: scale(1.2);
-  z-index: 10;
 }
 
-/* TITLE */
 .card-title {
   position: absolute;
   bottom: 0;
+  padding: 10px;
   background: linear-gradient(to top, black, transparent);
   width: 100%;
-  padding: 10px;
-  font-size: 12px;
 }
 
-/* PROGRESS */
 .progress {
   height: 4px;
   background: red;
@@ -72,18 +64,12 @@ body {
   left: 0;
 }
 
-/* MODAL */
 .modal {
   position: fixed;
   top: 0;
-  left: 0;
   width: 100%;
   height: 100%;
   background: black;
-}
-
-.modal-content {
-  padding: 20px;
 }
 
 video {
