@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX HYBRID SYSTEM (FINAL)
+# 🎬 NETFLIX NEXT LEVEL SYSTEM
 # ================================
 
 import os
@@ -32,9 +32,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS content(
         id TEXT,
         title TEXT,
-        type TEXT,
-        season INTEGER,
-        episode INTEGER,
+        category TEXT,
         story TEXT,
         file_id TEXT,
         poster TEXT,
@@ -54,8 +52,9 @@ init_db()
 
 def extract(text):
     title = re.search(r"🎬\s*(.*?)\s*\(", text)
-    season = re.search(r"S(\d+)", text)
-    episode = re.search(r"E(\d+)", text)
+
+    # Kategorien aus Hashtags
+    tags = re.findall(r"#(\w+)", text)
 
     story = "-"
     s = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S)
@@ -64,8 +63,7 @@ def extract(text):
 
     return {
         "title": title.group(1) if title else "Unknown",
-        "season": int(season.group(1)) if season else None,
-        "episode": int(episode.group(1)) if episode else None,
+        "category": tags[0] if tags else "Trending",
         "story": story
     }
 
@@ -77,7 +75,6 @@ def save(msg):
     global LAST_COVER
     chat_id = msg["chat"]["id"]
 
-    # Cover speichern
     if "photo" in msg:
         LAST_COVER[chat_id] = msg["photo"][-1]["file_id"]
         return
@@ -91,22 +88,18 @@ def save(msg):
     if not info:
         return
 
-    content_type = "series" if info["season"] else "movie"
-
-    # ❗ wichtig: Telegram Cover NICHT direkt anzeigen
+    # ❗ echtes Bild geht im Web nur als URL
     poster = f"https://dummyimage.com/300x450/000/fff&text={info['title'].replace(' ','+')}"
 
     con = db()
     cur = con.cursor()
 
     cur.execute("""
-    INSERT INTO content VALUES(?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO content VALUES(?,?,?,?,?,?,?,?)
     """, (
         str(int(time.time())),
         info["title"],
-        content_type,
-        info["season"],
-        info["episode"],
+        info["category"],
         info["story"],
         video["file_id"],
         poster,
@@ -121,7 +114,7 @@ def save(msg):
 # API
 # ================================
 
-@app.route("/api/content")
+@app.route("/api")
 def api():
     con = db()
     cur = con.cursor()
@@ -132,13 +125,11 @@ def api():
     data = [{
         "id": r[0],
         "title": r[1],
-        "type": r[2],
-        "season": r[3],
-        "episode": r[4],
-        "story": r[5],
-        "file_id": r[6],
-        "poster": r[7],
-        "views": r[8]
+        "category": r[2],
+        "story": r[3],
+        "file_id": r[4],
+        "poster": r[5],
+        "views": r[6]
     } for r in rows]
 
     return jsonify(data)
@@ -162,7 +153,7 @@ def play(id):
 
         requests.post(f"{URL}/sendVideo", json={
             "chat_id": uid,
-            "video": m[6],
+            "video": m[4],
             "caption": m[1]
         })
 
@@ -170,83 +161,133 @@ def play(id):
     return "OK"
 
 # ================================
-# WEB APP (ECHTES UI)
+# WEB UI (NEXT LEVEL)
 # ================================
 
 @app.route("/")
 def home():
     return render_template_string("""
-    <html>
-    <meta name="viewport" content="width=device-width">
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width">
 
-    <style>
-    body {background:#141414;color:white;margin:0;font-family:sans-serif}
+<style>
+body {margin:0;background:#141414;color:white;font-family:sans-serif}
 
-    .hero {
-        height:70vh;
-        display:flex;
-        align-items:end;
-        padding:30px;
-        background-size:cover;
+.nav {
+    position:fixed;
+    width:100%;
+    padding:15px;
+    background:linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+    display:flex;
+    justify-content:space-between;
+    z-index:10;
+}
+
+.hero {
+    height:70vh;
+    display:flex;
+    align-items:end;
+    padding:30px;
+    background-size:cover;
+}
+
+.row {
+    display:flex;
+    overflow-x:auto;
+    padding:20px;
+}
+
+.card {
+    margin-right:10px;
+    transition:0.3s;
+    position:relative;
+}
+
+.card img {
+    width:160px;
+    border-radius:10px;
+}
+
+.card:hover {
+    transform:scale(1.2);
+}
+
+.overlay {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    background:rgba(0,0,0,0.8);
+    opacity:0;
+}
+
+.card:hover .overlay {
+    opacity:1;
+}
+
+/* MODAL */
+.modal {
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:black;
+    display:none;
+    padding:20px;
+    z-index:20;
+}
+</style>
+
+<body>
+
+<div class="nav">
+    <div>🎬 NETFLIX</div>
+</div>
+
+<div id="hero" class="hero"></div>
+
+<div id="content"></div>
+
+<div id="modal" class="modal">
+    <h1 id="title"></h1>
+    <p id="story"></p>
+    <button onclick="play()">▶️ Play</button>
+    <button onclick="closeModal()">❌</button>
+</div>
+
+<script>
+let DATA = [];
+let current = null;
+let uid = prompt("Telegram ID:");
+
+fetch("/api")
+.then(r=>r.json())
+.then(data=>{
+    DATA = data;
+
+    if(data.length){
+        document.getElementById("hero").style.backgroundImage =
+            "url("+data[0].poster+")";
     }
 
-    .row {
-        display:flex;
-        overflow-x:auto;
-        padding:20px;
-    }
+    let grouped = {};
 
-    .card {
-        margin-right:10px;
-        transition:0.3s;
-        position:relative;
-    }
+    data.forEach(m=>{
+        if(!grouped[m.category]) grouped[m.category]=[];
+        grouped[m.category].push(m);
+    });
 
-    .card img {
-        width:160px;
-        border-radius:10px;
-    }
+    let container = document.getElementById("content");
 
-    .card:hover {
-        transform:scale(1.2);
-    }
+    for(let cat in grouped){
+        let title = document.createElement("h2");
+        title.innerText = cat;
 
-    .overlay {
-        position:absolute;
-        bottom:0;
-        background:rgba(0,0,0,0.8);
-        width:100%;
-        opacity:0;
-    }
+        let row = document.createElement("div");
+        row.className="row";
 
-    .card:hover .overlay {
-        opacity:1;
-    }
-
-    </style>
-
-    <body>
-
-    <div id="hero" class="hero"></div>
-
-    <h2 style="padding-left:20px;">🔥 Trending</h2>
-    <div id="row" class="row"></div>
-
-    <script>
-    let uid = prompt("Telegram ID:");
-
-    fetch("/api/content")
-    .then(r=>r.json())
-    .then(data=>{
-
-        if(data.length>0){
-            document.getElementById("hero").style.backgroundImage =
-                "url("+data[0].poster+")";
-        }
-
-        let row = document.getElementById("row");
-
-        data.forEach(m=>{
+        grouped[cat].forEach(m=>{
             let card = document.createElement("div");
             card.className="card";
 
@@ -255,18 +296,33 @@ def home():
                 <div class="overlay">${m.title}</div>
             `;
 
-            card.onclick=()=>{
-                window.location="/play/"+m.id+"?uid="+uid;
-            }
+            card.onclick = ()=>{
+                current = m;
+                document.getElementById("modal").style.display="block";
+                document.getElementById("title").innerText = m.title;
+                document.getElementById("story").innerText = m.story;
+            };
 
             row.appendChild(card);
         });
-    });
-    </script>
 
-    </body>
-    </html>
-    """)
+        container.appendChild(title);
+        container.appendChild(row);
+    }
+});
+
+function closeModal(){
+    document.getElementById("modal").style.display="none";
+}
+
+function play(){
+    window.location="/play/"+current.id+"?uid="+uid;
+}
+</script>
+
+</body>
+</html>
+""")
 
 # ================================
 # WEBHOOK
