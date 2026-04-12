@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (ULTIMATE GOD MODE FINAL)
+# 🎬 NETFLIX BOT FINAL (ULTIMATE OFFLINE NETFLIX SYSTEM)
 # ================================
 
 import os
@@ -12,11 +12,12 @@ from difflib import get_close_matches
 TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 CHANNEL = "-1003526259129"
-OMDB_KEY = "a3776f86"
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 DATA_FILE = "data.json"
+USERS_FILE = "users.json"
+
 CACHE = {}
 SESSION = {}
 
@@ -41,98 +42,132 @@ def clean_title(raw):
     return " ".join([w for w in raw.split() if w.lower() not in blacklist])
 
 # ================================
-# 🧠 AUTO DB
+# 🧠 USER SYSTEM
 # ================================
 
-AUTO_DB = {
-    "bourne identität": "The Bourne Identity",
-    "bourne": "The Bourne Identity",
-    "jurassic": "Jurassic Park",
-    "havoc": "Havoc",
-    "godfather": "The Godfather",
-    "shawshank": "The Shawshank Redemption"
-}
+def load_users():
+    if os.path.exists(USERS_FILE):
+        return json.load(open(USERS_FILE))
+    return {}
 
-def auto_db_match(title):
-    t = title.lower()
-    for key in AUTO_DB:
-        if key in t:
-            return AUTO_DB[key]
+def save_users(users):
+    json.dump(users, open(USERS_FILE, "w"))
+
+def get_user(uid):
+    users = load_users()
+    if str(uid) not in users:
+        users[str(uid)] = {
+            "watching": [],
+            "history": [],
+            "favorites": []
+        }
+        save_users(users)
+    return users[str(uid)]
+
+def update_continue(uid, movie_id):
+    users = load_users()
+    user = get_user(uid)
+
+    if movie_id in user["watching"]:
+        user["watching"].remove(movie_id)
+
+    user["watching"].insert(0, movie_id)
+    user["watching"] = user["watching"][:5]
+
+    if movie_id not in user["history"]:
+        user["history"].append(movie_id)
+
+    users[str(uid)] = user
+    save_users(users)
+
+def add_favorite(uid, movie_id):
+    users = load_users()
+    user = get_user(uid)
+
+    if movie_id not in user["favorites"]:
+        user["favorites"].append(movie_id)
+
+    users[str(uid)] = user
+    save_users(users)
+
+# ================================
+# DATA
+# ================================
+
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            return json.load(open(DATA_FILE))
+        except:
+            return {"movies": []}
+    return {"movies": []}
+
+def save_data(data):
+    json.dump(data, open(DATA_FILE, "w"))
+
+def get_next_id(data):
+    return str(len(data["movies"]) + 1).zfill(4)
+
+# ================================
+# 🧠 MATCH SYSTEM (OFFLINE)
+# ================================
+
+def match_movie(raw, data):
+    raw = raw.lower()
+
+    # DIRECT
+    for m in data["movies"]:
+        if raw in m["title"].lower():
+            return m
+
+    # FUZZY
+    titles = [m["title"] for m in data["movies"]]
+    match = get_close_matches(raw, titles, n=1, cutoff=0.5)
+
+    if match:
+        return next((x for x in data["movies"] if x["title"] == match[0]), None)
+
     return None
 
 # ================================
-# 🧠 OFFLINE MATCH
+# 📊 TRENDING
 # ================================
 
-def offline_match(title, data):
-    t = title.lower()
+def get_top_movies(data):
+    return sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True)[:10]
+
+# ================================
+# 🧠 RECOMMENDATIONS
+# ================================
+
+def get_recommendations(uid, data):
+    user = get_user(uid)
+
+    genres = []
+
+    for mid in user["history"]:
+        m = next((x for x in data["movies"] if x["id"] == mid), None)
+        if m:
+            genres += m.get("genre", [])
+
+    scored = []
 
     for m in data["movies"]:
-        if t == m["title"].lower():
-            return m["title"]
+        score = 0
 
-    for m in data["movies"]:
-        if t in m["title"].lower():
-            return m["title"]
+        for g in m.get("genre", []):
+            if g in genres:
+                score += 2
 
-    titles = [m["title"] for m in data["movies"]]
-    match = get_close_matches(title, titles, n=1, cutoff=0.5)
-    return match[0] if match else None
+        score += m.get("views", 0) * 0.2
 
-# ================================
-# 🧠 FUZZY MATCH
-# ================================
+        scored.append((score, m))
 
-def fuzzy_match(title, data):
-    titles = [m["title"] for m in data["movies"]]
-    match = get_close_matches(title, titles, n=1, cutoff=0.6)
-    return match[0] if match else None
+    scored.sort(reverse=True)
+    return [m for _, m in scored[:10]]
 
 # ================================
-# 🧠 AI DETECT
-# ================================
-
-def ai_detect_title(raw_text):
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{
-                "role": "user",
-                "content": f"Errate den Film Titel:\n{raw_text}\nNur Titel."
-            }],
-            temperature=0.3
-        )
-        return res.choices[0].message.content.strip()
-    except:
-        return None
-
-# ================================
-# 🧠 MULTI TRY
-# ================================
-
-def try_multiple_titles(title):
-    variants = [
-        title,
-        title.split("(")[0],
-        title.split("-")[0],
-        " ".join(title.split(" ")[:2])
-    ]
-
-    for t in variants:
-        movie = get_movie(t.strip())
-        if movie:
-            return movie
-    return None
-
-# ================================
-# 🎬 AUTO POSTER
-# ================================
-
-def generate_poster(title):
-    return f"https://dummyimage.com/600x900/000/fff&text={title.replace(' ','+')}"
-
-# ================================
-# 🎞 NETFLIX ROW
+# 🎞 ROW UI
 # ================================
 
 def show_row(chat_id, title, movies):
@@ -155,154 +190,31 @@ def show_row(chat_id, title, movies):
     })
 
 # ================================
-# 🔥 SWIPE UI
-# ================================
-
-def show_swipe(chat_id, movies, page=0):
-    SESSION[chat_id] = movies
-
-    if not movies:
-        return
-
-    total = len(movies)
-    m = movies[page]
-
-    movie = get_movie(m["title"]) or {
-        "Title": m["title"],
-        "Poster": generate_poster(m["title"]),
-        "imdbRating": "?"
-    }
-
-    nav = []
-
-    if page > 0:
-        nav.append({"text": "⬅️", "callback_data": f"swipe_{page-1}"})
-
-    if page < total - 1:
-        nav.append({"text": "➡️", "callback_data": f"swipe_{page+1}"})
-
-    buttons = [nav] if nav else []
-    buttons.append([{"text": "▶️ Öffnen", "callback_data": f"movie_{m['title']}"}])
-
-    safe_post("sendPhoto", {
-        "chat_id": chat_id,
-        "photo": movie.get("Poster") or generate_poster(m["title"]),
-        "caption": f"🎬 {movie['Title']} • ⭐ {movie.get('imdbRating')}",
-        "reply_markup": {"inline_keyboard": buttons}
-    })
-
-# ================================
-# 📊 TRENDING
-# ================================
-
-def get_top_movies(data):
-    return sorted(data["movies"], key=lambda x: x.get("views", 0), reverse=True)[:10]
-
-def show_trending_chart(chat_id, data):
-    top = get_top_movies(data)
-
-    text = "📊 TOP FILME\n\n"
-    for i, m in enumerate(top, 1):
-        text += f"{i}. {m['title']} ({m.get('views',0)}🔥)\n"
-
-    safe_post("sendMessage", {
-        "chat_id": chat_id,
-        "text": text
-    })
-
-# ================================
-# OMDb
-# ================================
-
-def get_movie(title):
-    if title in CACHE:
-        return CACHE[title]
-
-    try:
-        r = requests.get(
-            f"http://www.omdbapi.com/?t={title}&apikey={OMDB_KEY}",
-            timeout=5
-        ).json()
-
-        if r.get("Response") == "False":
-            return None
-
-        CACHE[title] = r
-        return r
-    except:
-        return None
-
-# ================================
-# DATA
-# ================================
-
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            return json.load(open(DATA_FILE))
-        except:
-            return {"movies": []}
-    return {"movies": []}
-
-def save_data(data):
-    json.dump(data, open(DATA_FILE, "w"))
-
-def get_next_id(data):
-    return str(len(data["movies"]) + 1).zfill(4)
-
-# ================================
-# SERIES
-# ================================
-
-def detect_series(title):
-    t = title.lower()
-    if "bourne" in t:
-        return "Bourne"
-    if "jurassic" in t:
-        return "Jurassic"
-    return None
-
-def get_series_list(data, name):
-    return [m for m in data["movies"] if m.get("series") == name]
-
-def show_series_row(chat_id, data):
-    series = list(set([m.get("series") for m in data["movies"] if m.get("series")]))
-
-    buttons = []
-    for s in series:
-        buttons.append([{"text": f"🎞 {s}", "callback_data": f"series_{s}"}])
-
-    if buttons:
-        safe_post("sendMessage", {
-            "chat_id": chat_id,
-            "text": "🎞 Reihen",
-            "reply_markup": {"inline_keyboard": buttons}
-        })
-
-# ================================
 # 🎬 CARD
 # ================================
 
-def send_card(chat_id, movie, local):
-    caption = f"""🎬 {movie['Title'].upper()} ({movie['Year']})
-🔥 4K • {movie.get('Genre','')}
+def send_card(chat_id, movie):
+    caption = f"""🎬 {movie['title'].upper()} ({movie.get('year','')})
+🔥 4K • {' • '.join(movie.get('genre',[]))}
 ━━━━━━━━━━━━━━
-⭐ {movie.get('imdbRating')} • ⏱ {movie.get('Runtime')} • 🔞 FSK 16
-🎥 {movie.get('Director')}
+⭐ {movie.get('rating','-')} • ⏱ {movie.get('runtime','-')}
+🎥 {movie.get('director','-')}
 ━━━━━━━━━━━━━━
-▶️ #{local['id']}
+▶️ #{movie['id']}
 ━━━━━━━━━━━━━━
 @LibraryOfLegends"""
 
-    safe_post("sendPhoto", {
-        "chat_id": chat_id,
-        "photo": movie.get("Poster") or generate_poster(movie["Title"])
-    })
-
     safe_post("sendVideo", {
         "chat_id": chat_id,
-        "video": local["file_id"],
-        "caption": caption
+        "video": movie["file_id"],
+        "caption": caption,
+        "reply_markup": {
+            "inline_keyboard": [
+                [{"text": "▶️ Starten", "callback_data": f"play_{movie['id']}"}],
+                [{"text": "⭐ Favorit", "callback_data": f"fav_{movie['id']}"}],
+                [{"text": "🏠 Home", "callback_data": "home"}]
+            ]
+        }
     })
 
 # ================================
@@ -311,21 +223,23 @@ def send_card(chat_id, movie, local):
 
 def show_home(chat_id):
     data = load_data()
+    user = get_user(chat_id)
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 Netflix Style"
+        "text": "🎬 Library of Legends\n🔥 Dein Netflix"
     })
 
-    show_row(chat_id, "🔥 Trending", get_top_movies(data))
-    show_row(chat_id, "🆕 Neu", list(reversed(data["movies"]))[:10])
-    show_row(chat_id, "🏆 Top", get_top_movies(data))
+    if user["watching"]:
+        movies = [m for m in data["movies"] if m["id"] in user["watching"]]
+        show_row(chat_id, "▶️ Weiter schauen", movies)
 
-    show_trending_chart(chat_id, data)
-    show_series_row(chat_id, data)
+    show_row(chat_id, "🔥 Trending", get_top_movies(data))
+    show_row(chat_id, "🧠 Für dich", get_recommendations(chat_id, data))
+    show_row(chat_id, "🆕 Neu", list(reversed(data["movies"]))[:10])
 
 # ================================
-# VIDEO (ULTRA MATCH)
+# VIDEO
 # ================================
 
 def handle_video(msg):
@@ -333,30 +247,7 @@ def handle_video(msg):
     video = msg.get("video") or msg.get("document")
 
     raw = clean_title(msg.get("caption") or "")
-    movie = None
-
-    if raw:
-        auto = auto_db_match(raw)
-        if auto:
-            movie = try_multiple_titles(auto)
-
-    if not movie and raw:
-        offline = offline_match(raw, data)
-        if offline:
-            movie = {"Title": offline}
-
-    if not movie and raw:
-        movie = try_multiple_titles(raw)
-
-    if not movie and raw:
-        fuzzy = fuzzy_match(raw, data)
-        if fuzzy:
-            movie = get_movie(fuzzy)
-
-    if not movie and raw:
-        ai_title = ai_detect_title(raw)
-        if ai_title:
-            movie = try_multiple_titles(ai_title)
+    movie = match_movie(raw, data)
 
     if not movie:
         safe_post("sendMessage", {
@@ -365,24 +256,13 @@ def handle_video(msg):
         })
         return
 
-    entry = {
-        "id": get_next_id(data),
-        "title": movie["Title"],
-        "file_id": video["file_id"],
-        "views": 0,
-        "series": detect_series(movie["Title"])
-    }
-
-    data["movies"].append(entry)
-    save_data(data)
-
     safe_post("sendMessage", {
         "chat_id": msg["chat"]["id"],
-        "text": f"🧠 Erkannt: {movie['Title']}"
+        "text": f"🧠 Erkannt: {movie['title']}"
     })
 
-    send_card(msg["chat"]["id"], movie, entry)
-    send_card(CHANNEL, movie, entry)
+    send_card(msg["chat"]["id"], movie)
+    send_card(CHANNEL, movie)
 
 # ================================
 # WEBHOOK
@@ -402,23 +282,30 @@ def webhook():
         if cb == "home":
             show_home(chat_id)
 
-        elif cb.startswith("swipe_"):
-            page = int(cb.split("_")[1])
-            show_swipe(chat_id, SESSION.get(chat_id, []), page)
+        elif cb.startswith("play_"):
+            mid = cb.split("_")[1]
+            update_continue(chat_id, mid)
+
+            m = next((x for x in data["movies"] if x["id"] == mid), None)
+            if m:
+                m["views"] += 1
+                save_data(data)
+                send_card(chat_id, m)
+
+        elif cb.startswith("fav_"):
+            mid = cb.split("_")[1]
+            add_favorite(chat_id, mid)
+
+            safe_post("sendMessage", {
+                "chat_id": chat_id,
+                "text": "⭐ Zu Favoriten hinzugefügt"
+            })
 
         elif cb.startswith("movie_"):
             title = cb.replace("movie_", "")
             m = next((x for x in data["movies"] if x["title"] == title), None)
-
             if m:
-                movie = get_movie(title)
-                m["views"] += 1
-                save_data(data)
-                send_card(chat_id, movie, m)
-
-        elif cb.startswith("series_"):
-            name = cb.replace("series_", "")
-            show_row(chat_id, name, get_series_list(data, name))
+                send_card(chat_id, m)
 
     if "message" in update:
         msg = update["message"]
