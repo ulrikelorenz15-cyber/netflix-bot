@@ -28,27 +28,44 @@ export default function App() {
   return (
     <div className="app">
 
+      {/* NAV */}
       <div className="nav">
-        🎬 NETFLIX
+        <div className="logo">NETFLIX</div>
         <input placeholder="🔍 Suche..." onChange={(e)=>search(e.target.value)} />
       </div>
 
+      {/* HERO */}
       {filtered[0] && (
         <div className="hero">
-          <h1>{filtered[0].title}</h1>
-          <p>{filtered[0].story}</p>
+          <div className="hero-content">
+            <h1>{filtered[0].title}</h1>
+            <p>{filtered[0].story}</p>
+            <button onClick={()=>setCurrent(filtered[0])}>▶ Play</button>
+          </div>
         </div>
       )}
 
-      <div className="row">
+      {/* GRID */}
+      <div className="grid">
         {filtered.map(m => (
-          <div key={m.id} className="card" onClick={()=>setCurrent(m)}>
-            <div className="card-title">{m.title}</div>
-            <div className="progress" style={{width: m.progress + "%"}}></div>
+          <div
+            key={m.id}
+            className="card"
+            onClick={()=>setCurrent(m)}
+          >
+            <div className="overlay">
+              <span>{m.title}</span>
+            </div>
+
+            <div
+              className="progress"
+              style={{width: m.progress + "%"}}
+            ></div>
           </div>
         ))}
       </div>
 
+      {/* MODAL */}
       {current && (
         <div className="modal">
           <div className="modal-content">
@@ -73,7 +90,7 @@ export default function App() {
               }}
             />
 
-            <button onClick={()=>setCurrent(null)}>❌</button>
+            <button onClick={()=>setCurrent(null)}>✖</button>
           </div>
         </div>
       )}
