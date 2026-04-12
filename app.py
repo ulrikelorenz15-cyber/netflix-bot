@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX NEXT LEVEL FINAL
+# 🎬 NETFLIX FINAL CLEAN FIX
 # ================================
 
 import os
@@ -46,21 +46,28 @@ def init_db():
 init_db()
 
 # ================================
-# PARSER
+# PARSER (FIXED)
 # ================================
 
 def extract(msg):
     text = msg.get("caption","")
 
-    title = "Film"
-    if text:
-        title = text.split("\n")[0]
+    # 🎬 Titel korrekt erkennen
+    match = re.search(r"🎬\s*(.*?)\s*\(", text)
+    if match:
+        title = match.group(1)
+    else:
+        title = "Film"
 
-    # Kategorie aus Hashtag
+    # Kategorie
     tags = re.findall(r"#(\w+)", text)
     category = tags[0] if tags else "Trending"
 
-    story = text if text else "-"
+    # Story
+    story = "-"
+    s = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━", text, re.S)
+    if s:
+        story = s.group(1)
 
     return title, category, story
 
@@ -74,7 +81,8 @@ def save(msg):
 
     title, category, story = extract(msg)
 
-    poster = "https://via.placeholder.com/300x450?text=" + title.replace(" ", "+")
+    # ✅ STABILES COVER (KEIN ❓ MEHR)
+    poster = "https://placehold.co/300x450/141414/FFFFFF?text=" + title.replace(" ", "+")
 
     con = db()
     cur = con.cursor()
@@ -118,7 +126,7 @@ def api():
         "timestamp": r[7]
     } for r in rows]
 
-    # 🔥 Trending Sortierung
+    # 🔥 Trending
     data.sort(key=lambda x: x["views"], reverse=True)
 
     return jsonify(data)
@@ -150,7 +158,7 @@ def play(id):
     return "OK"
 
 # ================================
-# UI
+# UI (FINAL FIXED)
 # ================================
 
 @app.route("/")
@@ -263,10 +271,12 @@ fetch("/api")
     if(data.length){
         document.getElementById("hero").style.backgroundImage =
             "url("+data[0].poster+")";
-        document.getElementById("hero").innerText = data[0].title;
+
+        document.getElementById("hero").innerHTML =
+            "<div style='font-size:32px'>" + data[0].title + "</div>";
     }
 
-    // 🔥 Kategorien dynamisch
+    // Kategorien
     let grouped = {};
 
     data.forEach(m=>{
