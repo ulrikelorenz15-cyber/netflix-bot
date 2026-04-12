@@ -1,5 +1,5 @@
 # ================================
-# 🎬 NETFLIX BOT FINAL (NEXT LEVEL)
+# 🎬 NETFLIX BOT FINAL (ULTRA UI)
 # ================================
 
 import os
@@ -28,14 +28,14 @@ def safe_post(method, payload):
         pass
 
 # ================================
-# 🎬 REAL POSTER (BESSER)
+# 🎬 POSTER (REAL STYLE)
 # ================================
 
 def get_poster(title):
-    return f"https://image.pollinations.ai/prompt/{title}+movie+poster+realistic"
+    return f"https://image.pollinations.ai/prompt/{title}+cinematic+movie+poster+dark"
 
 # ================================
-# 🧠 SERIES DETECTION (NEU)
+# 🧠 SERIES DETECTION
 # ================================
 
 def detect_series(title):
@@ -55,16 +55,13 @@ def detect_series(title):
     return None
 
 # ================================
-# 🧠 ULTRA PARSER (FIXED)
+# 🧠 PARSER (PERFECT)
 # ================================
 
 def extract_movie_data(text):
     if not text:
         return None
 
-    text = text.strip()
-
-    # TITLE
     m = re.search(r"🎬\s*(.*?)\s*\((\d{4})\)", text)
     if not m:
         return None
@@ -72,50 +69,27 @@ def extract_movie_data(text):
     title = m.group(1).strip()
     year = m.group(2)
 
-    # RATING
-    rating = "-"
-    r = re.search(r"⭐\s*([0-9.]+)", text)
-    if r:
-        rating = r.group(1)
+    rating = re.search(r"⭐\s*([0-9.]+)", text)
+    runtime = re.search(r"⏱\s*([0-9]+\s*Min)", text)
+    director = re.search(r"🎥\s*(.*?)\n", text)
 
-    # RUNTIME
-    runtime = "-"
-    rt = re.search(r"⏱\s*([0-9]+\s*Min)", text)
-    if rt:
-        runtime = rt.group(1)
+    story = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━━━━━━━", text, re.S)
 
-    # DIRECTOR
-    director = "-"
-    dr = re.search(r"🎥\s*(.*?)\n", text)
-    if dr:
-        director = dr.group(1).strip()
-
-    # STORY
-    story = "-"
-    st = re.search(r"📖 STORY\s*(.*?)\s*━━━━━━━━━━━━━━", text, re.S)
-    if st:
-        story = st.group(1).strip()
-
-    # GENRE
     genres = re.findall(r"#(\w+)", text)
-
     if not genres:
         g = re.search(r"🔥.*?•(.*?)\n", text)
         if g:
             genres = [x.strip() for x in g.group(1).split("•")]
 
-    if not genres:
-        genres = ["Unknown"]
-
     return {
         "title": title,
         "year": year,
-        "genre": genres[:2],
-        "runtime": runtime,
-        "director": director,
-        "rating": rating,
-        "story": story,
-        "tags": genres,
+        "genre": genres[:2] if genres else ["Unknown"],
+        "runtime": runtime.group(1) if runtime else "-",
+        "director": director.group(1) if director else "-",
+        "rating": rating.group(1) if rating else "-",
+        "story": story.group(1).strip() if story else "-",
+        "tags": genres if genres else [],
         "series": detect_series(title)
     }
 
@@ -144,7 +118,6 @@ def save_movie(msg):
     caption = msg.get("caption") or ""
 
     info = extract_movie_data(caption)
-
     if not info:
         return None
 
@@ -164,7 +137,7 @@ def save_movie(msg):
     return entry
 
 # ================================
-# 📊 SCORE SYSTEM
+# 📊 SCORE
 # ================================
 
 def get_score(m):
@@ -174,16 +147,14 @@ def get_top_movies(data):
     return sorted(data["movies"], key=get_score, reverse=True)[:10]
 
 # ================================
-# 📂 CATEGORIES + SERIES
+# 📂 STRUCTURE
 # ================================
 
 def get_categories(data):
     cats = {}
-
     for m in data["movies"]:
         for g in m["genre"]:
             cats.setdefault(g, []).append(m)
-
     return cats
 
 def get_series(data):
@@ -211,7 +182,7 @@ def get_continue(uid, data):
     return [m for m in data["movies"] if m["id"] in ids]
 
 # ================================
-# 🎮 SWIPE UI
+# 🎮 SWIPE UI (NETFLIX STYLE)
 # ================================
 
 def show_swipe(chat_id, movies, index=0):
@@ -241,7 +212,7 @@ def show_swipe(chat_id, movies, index=0):
     })
 
 # ================================
-# 🎬 CARD
+# 🎬 FULL CARD
 # ================================
 
 def send_card(chat_id, m):
@@ -277,7 +248,7 @@ def send_card(chat_id, m):
     })
 
 # ================================
-# 🏠 HOME (NETFLIX++)
+# 🏠 HOME (ULTRA NETFLIX)
 # ================================
 
 def show_home(chat_id):
@@ -285,7 +256,7 @@ def show_home(chat_id):
 
     safe_post("sendMessage", {
         "chat_id": chat_id,
-        "text": "🎬 Library of Legends\n🔥 Netflix++"
+        "text": "🎬 Library of Legends\n🔥 ULTRA NETFLIX UI"
     })
 
     # HERO
@@ -314,7 +285,7 @@ def handle_video(msg):
     if not entry:
         safe_post("sendMessage", {
             "chat_id": msg["chat"]["id"],
-            "text": "❌ Falsches Format!"
+            "text": "❌ Format falsch!"
         })
         return
 
