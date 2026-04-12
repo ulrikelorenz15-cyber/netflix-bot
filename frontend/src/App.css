@@ -7,86 +7,80 @@ body {
 
 /* NAV */
 .nav {
-  display: flex;
-  justify-content: space-between;
-  padding: 15px 30px;
-  background: linear-gradient(to bottom, black, transparent);
   position: fixed;
   width: 100%;
+  padding: 15px 30px;
+  display: flex;
+  justify-content: space-between;
+  background: linear-gradient(to bottom, black, transparent);
   z-index: 10;
 }
 
 .logo {
   color: red;
   font-weight: bold;
-  font-size: 20px;
 }
 
 .nav input {
   background: rgba(255,255,255,0.1);
   border: none;
-  color: white;
   padding: 8px;
-  border-radius: 5px;
+  color: white;
 }
 
 /* HERO */
 .hero {
   height: 70vh;
+  background-size: cover;
   display: flex;
   align-items: end;
-  padding: 40px;
-  background: linear-gradient(to top, black, transparent), #111;
 }
 
-.hero-content {
-  max-width: 500px;
+.hero-overlay {
+  padding: 40px;
+  background: linear-gradient(to top, black, transparent);
 }
 
 .hero h1 {
   font-size: 50px;
 }
 
-.hero button {
-  padding: 10px 20px;
-  background: red;
-  border: none;
-  color: white;
-  cursor: pointer;
+/* CATEGORY */
+.category {
+  margin: 20px;
 }
 
-/* GRID */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 15px;
+/* ROW */
+.row {
+  display: flex;
+  overflow-x: auto;
   padding: 20px;
 }
 
 /* CARD */
 .card {
+  min-width: 150px;
   height: 220px;
-  background: #222;
+  background-size: cover;
+  margin-right: 10px;
   border-radius: 10px;
   position: relative;
-  overflow: hidden;
   cursor: pointer;
   transition: 0.3s;
 }
 
 .card:hover {
-  transform: scale(1.15);
+  transform: scale(1.2);
   box-shadow: 0 10px 30px rgba(0,0,0,0.8);
 }
 
 /* OVERLAY */
-.overlay {
+.card-overlay {
   position: absolute;
   bottom: 0;
+  padding: 10px;
   width: 100%;
   background: linear-gradient(to top, black, transparent);
-  padding: 10px;
-  font-size: 12px;
 }
 
 /* PROGRESS */
@@ -95,7 +89,6 @@ body {
   background: red;
   position: absolute;
   bottom: 0;
-  left: 0;
 }
 
 /* MODAL */
